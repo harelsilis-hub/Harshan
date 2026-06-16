@@ -95,6 +95,9 @@ router.post('/sync-moodle', async (req, res) => {
     res.json({ success: true, addedCount });
   } catch (error) {
     console.error('Sync failed:', error);
+    if (error.message && error.message.includes('INVALID_CREDENTIALS')) {
+      return res.status(401).json({ error: 'שם המשתמש או הסיסמה שהזנת שגויים. נסה שוב.' });
+    }
     res.status(500).json({ error: error.message || 'Sync failed' });
   }
 });

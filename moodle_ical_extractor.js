@@ -35,11 +35,18 @@ async function extractMoodleCalendarUrl(username, password) {
     // Using typical Moodle login button selectors
     await page.click('#loginbtn, button[type="submit"]');
 
-    // Wait for authentication to complete (waiting for navigation away from login)
-    await page.waitForURL(url => !url.href.includes('/login/index.php'), { timeout: 15000 }).catch(() => {
-        // Fallback to wait for network idle if URL check is not reliable
-        return page.waitForLoadState('networkidle');
-    });
+    // Wait for authentication request to complete
+    await page.waitForLoadState('networkidle');
+
+    // Check if we are still on the login page (means authentication failed)
+    if (page.url().includes('/login/index.php')) {
+        let errorText = 'Invalid Moodle credentials';
+        const errorEl = page.locator('.alert-danger, #loginerrormessage, .error').first();
+        if (await errorEl.count() > 0) {
+            errorText = await errorEl.innerText();
+        }
+        throw new Error('INVALID_CREDENTIALS: ' + errorText.trim());
+    }
 
     // 4. Navigate directly to the calendar export page
     const exportUrl = 'https://moodle.bgu.ac.il/moodle/calendar/export.php';
