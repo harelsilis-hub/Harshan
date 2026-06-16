@@ -9,10 +9,52 @@ router.get('/courses/:courseId/due', (req, res) => {
     FROM flashcards f
     JOIN lectures l ON f.lecture_id = l.id
     WHERE f.course_id = ?
+      AND f.learning_status = 'active'
       AND f.next_review_date <= datetime('now')
     ORDER BY f.next_review_date ASC
   `, [req.params.courseId]);
   res.json(cards);
+});
+
+// POST /api/courses/:courseId/drip-feed — unlock N flashcards into active learning
+router.post('/courses/:courseId/drip-feed', (req, res) => {
+  const limitParam = req.body.limit;
+  let limit = 15;
+  if (limitParam === 'ALL') {
+    limit = 999999;
+  } else if (limitParam !== undefined && !isNaN(parseInt(limitParam, 10))) {
+    limit = parseInt(limitParam, 10);
+  }
+
+  const pendingCards = queryAll(`
+    SELECT id FROM flashcards
+    WHERE course_id = ? AND learning_status = 'pending'
+    ORDER BY appearance_index ASC
+    LIMIT ?
+  `, [req.params.courseId, limit]);
+
+  if (pendingCards.length === 0) {
+    return res.json({ unlocked: 0, cards: [] });
+  }
+
+  const ids = pendingCards.map(c => c.id);
+  const placeholders = ids.map(() => '?').join(',');
+  
+  execute(`
+    UPDATE flashcards
+    SET learning_status = 'active', next_review_date = datetime('now'), interval = 0, repetitions = 0
+    WHERE id IN (${placeholders})
+  `, ids);
+
+  const unlockedCards = queryAll(`
+    SELECT f.*, l.title AS lecture_title, l.summary_content AS lecture_summary
+    FROM flashcards f
+    JOIN lectures l ON f.lecture_id = l.id
+    WHERE f.id IN (${placeholders})
+    ORDER BY f.appearance_index ASC
+  `, ids);
+
+  res.json({ unlocked: unlockedCards.length, cards: unlockedCards });
 });
 
 // GET /api/courses/:courseId/flashcards — all flashcards (for stats)
@@ -27,21 +69,22 @@ router.get('/courses/:courseId/flashcards', (req, res) => {
   res.json(cards);
 });
 
-// GET /api/courses/:courseId/cram — top 20 hardest flashcards
+// GET /api/courses/:courseId/cram — Ghost Review Engine (Hardest 50 Active Cards)
 router.get('/courses/:courseId/cram', (req, res) => {
   const cards = queryAll(`
     SELECT f.*, l.title AS lecture_title, l.summary_content AS lecture_summary
     FROM flashcards f
     JOIN lectures l ON f.lecture_id = l.id
     WHERE f.course_id = ?
-    ORDER BY f.easiness_factor ASC, f.interval ASC
-    LIMIT 20
+      AND f.learning_status = 'active'
+    ORDER BY f.easiness_factor ASC
+    LIMIT 50
   `, [req.params.courseId]);
   res.json(cards);
 });
 
 router.post('/flashcards/:id/review', (req, res) => {
-  const { quality, user_id } = req.body;
+  const { quality, user_id, is_cram_mode } = req.body;
   if (quality === undefined || quality < 0 || quality > 5) {
     return res.status(400).json({ error: 'Quality score must be between 0 and 5' });
   }
@@ -75,11 +118,20 @@ router.post('/flashcards/:id/review', (req, res) => {
   const nextStr = next.toISOString().replace('T', ' ').substring(0, 19);
   /* ────────────────────────────────────────────────────── */
 
-  execute(`
-    UPDATE flashcards
-    SET easiness_factor = ?, interval = ?, repetitions = ?, next_review_date = ?
-    WHERE id = ?
-  `, [easiness_factor, interval, repetitions, nextStr, req.params.id]);
+  if (!is_cram_mode) {
+    execute(`
+      UPDATE flashcards
+      SET easiness_factor = ?, interval = ?, repetitions = ?, next_review_date = ?
+      WHERE id = ?
+    `, [easiness_factor, interval, repetitions, nextStr, req.params.id]);
+  } else {
+    // In cram mode, we just mutate the in-memory object to reflect the "simulated" result 
+    // for immediate UI feedback, without writing to the DB.
+    card.easiness_factor = easiness_factor;
+    card.interval = interval;
+    card.repetitions = repetitions;
+    card.next_review_date = nextStr;
+  }
 
   let updatedUser = null;
   if (user_id) {
@@ -123,7 +175,7 @@ router.post('/flashcards/:id/review', (req, res) => {
     }
   }
 
-  const updated = queryOne('SELECT * FROM flashcards WHERE id = ?', [req.params.id]);
+  const updated = is_cram_mode ? card : queryOne('SELECT * FROM flashcards WHERE id = ?', [req.params.id]);
   res.json({ card: updated, user: updatedUser });
 });
 

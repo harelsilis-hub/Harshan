@@ -176,13 +176,18 @@ router.post('/courses/:courseId/lectures', upload.single('pdf'), async (req, res
     tomorrow.setDate(tomorrow.getDate() + 1);
     const nextStr = tomorrow.toISOString().replace('T', ' ').substring(0, 19);
 
-    for (const c of flashcards) {
+    for (let i = 0; i < flashcards.length; i++) {
+      const c = flashcards[i];
+      const appearance_index = i + 1;
+      const learning_status = 'pending';
       const { lastId: cardId } = execute(
-        `INSERT INTO flashcards (course_id, lecture_id, question_text, correct_answer, distractors, next_review_date, author_user_id, is_public)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [courseId, lectureId, c.question_text, c.correct_answer, JSON.stringify(c.distractors), nextStr, author_user_id ? parseInt(author_user_id, 10) : null, isPublicInt]
+        `INSERT INTO flashcards (course_id, lecture_id, appearance_index, learning_status, question_text, correct_answer, distractors, next_review_date, author_user_id, is_public)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [courseId, lectureId, appearance_index, learning_status, c.question_text, c.correct_answer, JSON.stringify(c.distractors), nextStr, author_user_id ? parseInt(author_user_id, 10) : null, isPublicInt]
       );
       c.id = cardId; // Attach the ID so frontend can potentially update it if it wants
+      c.appearance_index = appearance_index;
+      c.learning_status = learning_status;
       c.lecture_title = title.trim(); // Add lecture title for the frontend quiz UI
       c.lecture_summary = summary; // Add lecture summary so the frontend can show it during the quiz
     }
