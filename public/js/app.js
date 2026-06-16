@@ -189,7 +189,7 @@
     overlay.innerHTML = `
       <div class="modal-content" style="max-width:600px; max-height:80vh; overflow-y:auto; text-align:right;">
         <h2 style="margin-bottom:1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem;">📖 סיכום הרצאה</h2>
-        <div class="summary-text markdown-body" style="font-size: 1rem; line-height: 1.7; margin-bottom: 1.5rem;" dir="rtl">${renderMarkdown(summaryText)}</div>
+        <div class="summary-text markdown-body" style="font-size: 1rem; line-height: 1.7; margin-bottom: 1.5rem;" dir="auto">${renderMarkdown(summaryText)}</div>
         <div class="modal-actions" style="border-top: 1px solid var(--border); padding-top: 1rem;">
           <button class="btn btn-primary" id="modal-close-summary">סגור</button>
         </div>
@@ -966,17 +966,24 @@
     const cramBtn = document.getElementById('btn-cram-mode');
     if (cramBtn) {
       cramBtn.addEventListener('click', async () => {
+        // Show loading state
+        const originalText = cramBtn.innerHTML;
+        cramBtn.innerHTML = 'מייצר שאלות... <span style="display:inline-block; animation: spin 1s linear infinite;">⏳</span>';
+        cramBtn.disabled = true;
+
         try {
-          const cramCards = await api(`/courses/${courseId}/cram`);
+          const cramCards = await api(`/courses/${courseId}/cram-generate`, { method: 'POST' });
           if (!cramCards || cramCards.length === 0) {
-            toast('אין כרטיסיות לחרוש עליהן!', 'info');
+            toast('אין מספיק חומר בקורס כדי לייצר שאלות.', 'warning');
+            cramBtn.innerHTML = originalText;
+            cramBtn.disabled = false;
             return;
           }
           
           $app.innerHTML = `
             <div class="page-header" style="text-align:center; display:flex; flex-direction:column; align-items:center;">
               <h1 style="font-size:1.8rem; color:#f59e0b;">🔥 מצב חרישה</h1>
-              <p style="color:var(--text-secondary); margin-top:0.5rem;">מתרגל את ${cramCards.length} הכרטיסיות הקשות ביותר שלך.</p>
+              <p style="color:var(--text-secondary); margin-top:0.5rem;">10 שאלות ייחודיות שנוצרו במיוחד עבורך.</p>
             </div>
             <div id="sequence-container" style="max-width: 600px; margin: 0 auto;"></div>
           `;
@@ -985,7 +992,9 @@
           toast('סיימת מצב חרישה! כל הכבוד!', 'success');
           renderCourseDetail(courseId);
         } catch (err) {
-          toast(err.message, 'error');
+          toast('שגיאה ביצירת שאלות: ' + err.message, 'error');
+          cramBtn.innerHTML = originalText;
+          cramBtn.disabled = false;
         }
       });
     }
@@ -1258,7 +1267,7 @@
       }
 
       const summary = uploadResult.lecture.summary_content;
-      const newFlashcards = uploadResult.new_flashcards;
+      const newFlashcards = uploadResult.new_flashcards.slice(0, 15);
 
       // Replace view with Sequence UI
       $app.innerHTML = `
@@ -1361,7 +1370,7 @@
               <span>📖 ${escapeHtml(card.lecture_title || 'הרצאה')}</span>
               ${card.lecture_summary ? `<button class="btn btn-ghost btn-sm btn-show-summary" style="padding:0.2rem 0.5rem;">הצג סיכום</button>` : ''}
             </div>
-            <div class="question-text markdown-body" dir="rtl" style="margin-bottom: 1.5rem;">${renderMarkdown(card.question_text)}</div>
+            <div class="question-text markdown-body" dir="auto" style="margin-bottom: 1.5rem;">${renderMarkdown(card.question_text)}</div>
             
             ${isMCQ ? `
             <ul class="options-list">
@@ -1369,7 +1378,7 @@
                 <li>
                   <button class="option-btn" data-answer="${escapeHtml(opt)}" data-correct="${opt === card.correct_answer}">
                     <span class="option-key">${keys[i]}</span>
-                    <span class="option-content markdown-body" dir="rtl">${renderMarkdown(opt)}</span>
+                    <span class="option-content markdown-body" dir="auto">${renderMarkdown(opt)}</span>
                   </button>
                 </li>
               `).join('')}
@@ -1379,7 +1388,7 @@
               <button class="btn btn-primary" id="btn-reveal-answer" style="width: 100%; padding: 1rem; font-size: 1.1rem;">הצג תשובה</button>
               <div id="flashcard-answer-slot" style="display: none; margin-top: 1.5rem; border-top: 1px solid var(--border); padding-top: 1.5rem;">
                 <h4 style="margin-bottom: 1rem; color: var(--text-secondary);">תשובה נכונה:</h4>
-                <div class="markdown-body answer-reveal-box" dir="rtl" style="font-size: 1.1rem; margin-bottom: 2rem; background: var(--bg-secondary); padding: 1rem; border-radius: 8px;">
+                <div class="markdown-body answer-reveal-box" dir="auto" style="font-size: 1.1rem; margin-bottom: 2rem; background: var(--bg-secondary); padding: 1rem; border-radius: 8px;">
                   ${renderMarkdown(card.correct_answer)}
                 </div>
                 <h4 style="margin-bottom: 1rem; color: var(--text-secondary);">עד כמה ידעת את התשובה?</h4>
@@ -1481,14 +1490,16 @@
         }
 
         try {
-          const res = await api(`/flashcards/${card.id}/review`, {
-            method: 'POST',
-            body: JSON.stringify({ quality, user_id: currentUser ? currentUser.id : null }),
-          });
-          if (res && res.user) {
-            currentUser = res.user;
-            localStorage.setItem('currentUser', JSON.stringify(currentUser));
-            updateNav();
+          if (card.id) {
+            const res = await api(`/flashcards/${card.id}/review`, {
+              method: 'POST',
+              body: JSON.stringify({ quality, user_id: currentUser ? currentUser.id : null, is_cram_mode: isCramMode }),
+            });
+            if (res && res.user) {
+              currentUser = res.user;
+              localStorage.setItem('currentUser', JSON.stringify(currentUser));
+              updateNav();
+            }
           }
         } catch (err) {}
 
@@ -1514,7 +1525,7 @@
           </div>
         </div>
         <div class="summary-card" style="margin-top:2rem;">
-          <div class="summary-text markdown-body" style="font-size: 1.1rem; line-height: 1.7;" dir="rtl">${renderMarkdown(summaryText)}</div>
+          <div class="summary-text markdown-body" style="font-size: 1.1rem; line-height: 1.7;" dir="auto">${renderMarkdown(summaryText)}</div>
         </div>
         <div style="margin-top:2rem; text-align:right;">
           <button class="btn btn-primary btn-lg" id="btn-finish-summary">
@@ -1576,7 +1587,7 @@
               <span>📖 ${escapeHtml(card.lecture_title || 'הרצאה חדשה')}</span>
               ${card.lecture_summary ? `<button class="btn btn-ghost btn-sm btn-show-summary" style="padding:0.2rem 0.5rem;">הצג סיכום</button>` : ''}
             </div>
-            <div class="question-text markdown-body" dir="rtl" style="margin-bottom: 1.5rem;">${renderMarkdown(card.question_text)}</div>
+            <div class="question-text markdown-body" dir="auto" style="margin-bottom: 1.5rem;">${renderMarkdown(card.question_text)}</div>
             
             ${isMCQ ? `
             <ul class="options-list">
@@ -1584,7 +1595,7 @@
                 <li>
                   <button class="option-btn" data-answer="${escapeHtml(opt)}" data-correct="${opt === card.correct_answer}">
                     <span class="option-key">${keys[i]}</span>
-                    <span class="option-content markdown-body" dir="rtl">${renderMarkdown(opt)}</span>
+                    <span class="option-content markdown-body" dir="auto">${renderMarkdown(opt)}</span>
                   </button>
                 </li>
               `).join('')}
@@ -1594,7 +1605,7 @@
               <button class="btn btn-primary" id="btn-reveal-answer" style="width: 100%; padding: 1rem; font-size: 1.1rem;">הצג תשובה</button>
               <div id="flashcard-answer-slot" style="display: none; margin-top: 1.5rem; border-top: 1px solid var(--border); padding-top: 1.5rem;">
                 <h4 style="margin-bottom: 1rem; color: var(--text-secondary);">תשובה נכונה:</h4>
-                <div class="markdown-body answer-reveal-box" dir="rtl" style="font-size: 1.1rem; margin-bottom: 2rem; background: var(--bg-secondary); padding: 1rem; border-radius: 8px;">
+                <div class="markdown-body answer-reveal-box" dir="auto" style="font-size: 1.1rem; margin-bottom: 2rem; background: var(--bg-secondary); padding: 1rem; border-radius: 8px;">
                   ${renderMarkdown(card.correct_answer)}
                 </div>
                 <h4 style="margin-bottom: 1rem; color: var(--text-secondary);">עד כמה ידעת את התשובה?</h4>

@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const axios = require('axios');
 const { queryAll, queryOne, execute } = require('../db/schema');
 
 // GET /api/courses/:courseId/due — due flashcards for a course
@@ -76,11 +77,104 @@ router.get('/courses/:courseId/cram', (req, res) => {
     FROM flashcards f
     JOIN lectures l ON f.lecture_id = l.id
     WHERE f.course_id = ?
-      AND f.learning_status = 'active'
+      AND f.learning_status IN ('active', 'pending')
     ORDER BY f.easiness_factor ASC
     LIMIT 50
   `, [req.params.courseId]);
   res.json(cards);
+});
+
+// POST /api/courses/:courseId/cram-generate — Dynamically generate 10 ephemeral questions
+router.post('/courses/:courseId/cram-generate', async (req, res) => {
+  try {
+    const courseId = req.params.courseId;
+    
+    // Fetch up to 3 lecture summaries for context
+    const lectures = queryAll(`
+      SELECT summary_content FROM lectures
+      WHERE course_id = ? AND summary_content IS NOT NULL
+      ORDER BY RANDOM() LIMIT 3
+    `, [courseId]);
+
+    if (lectures.length === 0) {
+      return res.json([]);
+    }
+
+    const combinedSummary = lectures.map(l => l.summary_content).join('\n\n--- NEXT LECTURE ---\n\n');
+
+    const promptText = `
+Act as a strict Mathematical Quiz Generator. 
+Based on the following course material, generate exactly 10 unique, challenging Multiple Choice Questions (MCQs) for a student to study in "Cram Mode".
+Do NOT just repeat definitions verbatim. Ask conceptual questions, or ask the student to identify the correct condition for a theorem, etc.
+
+ABSOLUTE RULES:
+1. MATH FORMATTING: Write standard LaTeX without extra escaping (e.g., \\alpha, \\frac{}{}, \\langle v, w \\rangle). Wrap inline math in $ and block equations in $$.
+2. HEBREW: Content must be in Hebrew.
+3. DISTRACTORS: For every question, generate exactly 3 mathematically plausible but incorrect distractors.
+
+OUTPUT FORMAT (Strict JSON):
+Return ONLY a valid JSON array of objects.
+[
+  {
+    "question_text": "Question text here",
+    "correct_answer": "The correct answer",
+    "distractors": ["Wrong 1", "Wrong 2", "Wrong 3"]
+  }
+]
+
+Source Material:
+${combinedSummary}
+`;
+
+    const response = await axios.post(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=AQ.Ab8RN6JFY07YNeS8_hDWiPvr-yvtJtpMyxCxUjMceiEq8nSz-Q',
+      {
+        contents: [{ role: 'user', parts: [{ text: promptText }] }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.7,
+        }
+      }
+    );
+
+    let resultText = response.data.candidates[0].content.parts[0].text;
+    resultText = resultText.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
+    
+    let generatedCards;
+    try {
+      generatedCards = JSON.parse(resultText);
+    } catch (parseErr) {
+      console.log('JSON parse failed in Cram mode, attempting to fix LaTeX escaping...', parseErr.message);
+      let fixed = resultText.replace(/(?<!\\)\\(?!["\\/bfnrtu])/g, '\\\\');
+      fixed = fixed.replace(/(?<!\\)\\u(?![0-9a-fA-F]{4})/g, '\\\\u');
+      const latexWords = [
+        'frac', 'forall', 'frown',
+        'nabla', 'neq', 'nu', 'notin', 'nexists', 'nrightarrow', 'nsubseteq', 'nsupseteq', 'normal',
+        'rightarrow', 'rho', 'rangle', 'right',
+        'text', 'theta', 'times', 'triangle', 'tau', 'tilde', 'to', 'top',
+        'begin', 'beta', 'bmod', 'bar', 'bigcup', 'bigcap', 'bot', 'bullet', 'bf', 'bb'
+      ];
+      for (const word of latexWords) {
+        const regex = new RegExp(`(?<!\\\\)\\\\${word}`, 'g');
+        fixed = fixed.replace(regex, `\\\\\\\\${word}`);
+      }
+      generatedCards = JSON.parse(fixed);
+    }
+    
+    const uiCards = generatedCards.map(c => ({
+      id: null,
+      course_id: courseId,
+      question_text: c.question_text,
+      correct_answer: c.correct_answer,
+      distractors: JSON.stringify(c.distractors),
+      learning_status: 'cram_ephemeral'
+    }));
+
+    res.json(uiCards);
+  } catch (err) {
+    console.error('Cram generation error:', err.response?.data || err.message);
+    res.status(500).json({ error: 'Failed to generate cram questions.' });
+  }
 });
 
 router.post('/flashcards/:id/review', (req, res) => {
@@ -121,7 +215,7 @@ router.post('/flashcards/:id/review', (req, res) => {
   if (!is_cram_mode) {
     execute(`
       UPDATE flashcards
-      SET easiness_factor = ?, interval = ?, repetitions = ?, next_review_date = ?
+      SET easiness_factor = ?, interval = ?, repetitions = ?, next_review_date = ?, learning_status = 'active'
       WHERE id = ?
     `, [easiness_factor, interval, repetitions, nextStr, req.params.id]);
   } else {
