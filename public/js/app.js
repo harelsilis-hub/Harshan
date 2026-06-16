@@ -210,6 +210,7 @@
   function getRoute() {
     const hash = window.location.hash || '#/';
     if (hash === '#/community') return { view: 'community' };
+    if (hash === '#/tasks') return { view: 'tasks' };
     if (hash === '#/login') return { view: 'auth', mode: 'login' };
     if (hash === '#/register') return { view: 'auth', mode: 'register' };
     
@@ -438,6 +439,7 @@
       if (route.view === 'course') await renderCourseDetail(route.courseId);
       else if (route.view === 'semester') await renderSemesterDetail(route.semesterId);
       else if (route.view === 'community') await renderCommunity();
+      else if (route.view === 'tasks') await renderTasks();
       else await renderHome();
     } catch (err) {
       console.error(err);
@@ -457,6 +459,191 @@
       });
     }
   });
+
+  /* ═════════════════════════════════════════════════════
+     VIEW: Tasks / Deadlines
+     ═════════════════════════════════════════════════════ */
+  async function renderTasks() {
+    $app.innerHTML = `
+      <div class="page-header" style="flex-direction:column; align-items:flex-start; gap: 1rem;">
+        <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+          <h1>📋 מטלות (Moodle Deadlines)</h1>
+          <button class="btn btn-primary" id="btn-sync-moodle">
+            <span>🔄</span> סנכרן עם Moodle
+          </button>
+        </div>
+      </div>
+      <div id="tasks-container" style="margin-top:2rem;">
+        <div class="loading-state"><div class="spinner spinner-lg"></div>טוען...</div>
+      </div>
+    `;
+
+    document.getElementById('btn-sync-moodle').addEventListener('click', showSyncMoodleModal);
+
+    try {
+      const events = await api(`/calendar?user_id=${currentUser.id}`);
+      const container = document.getElementById('tasks-container');
+
+      if (events.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">📅</div>
+            <h3>אין לך מטלות עדיין</h3>
+            <p>לחץ על סנכרן כדי למשוך את המטלות והדדליינים מהמודל שלך.</p>
+          </div>
+        `;
+        return;
+      }
+
+      // Group by course ID (Moodle puts course ID in categories string)
+      const courses = {};
+      for (const e of events) {
+        const cId = e.moodle_course_id || 'כללי';
+        if (!courses[cId]) courses[cId] = [];
+        courses[cId].push(e);
+      }
+
+      let html = '<div class="course-grid" style="display: flex; flex-direction: column; gap: 1.5rem;">';
+      for (const cId in courses) {
+        const sortedEvents = courses[cId].sort((a, b) => new Date(a.event_date) - new Date(b.event_date));
+        
+        html += `
+          <div class="card" style="padding:0;">
+            <div class="card-header" style="background:var(--bg-card); cursor:pointer;" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'">
+              <h3 style="margin:0; color:var(--primary);">📁 קורס #${cId} <span class="badge badge-warning" style="margin-right:1rem;">${sortedEvents.length} מטלות</span></h3>
+            </div>
+            <div class="card-body" style="padding: 1.5rem;">
+              <ul style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:1rem;">
+        `;
+
+        for (const e of sortedEvents) {
+          const now = new Date();
+          const dateObj = new Date(e.event_date);
+          const timeDiff = dateObj - now; // milliseconds
+          
+          const isPast = timeDiff < 0;
+          const isSoon = !isPast && timeDiff <= 24 * 60 * 60 * 1000;
+          const isCompleted = e.is_completed === 1;
+          
+          const displayDate = dateObj.toLocaleString('he-IL', { dateStyle: 'medium', timeStyle: 'short' });
+          
+          let bgColor = 'transparent';
+          if (!isCompleted) {
+            if (isPast) bgColor = 'rgba(255, 0, 0, 0.15)'; // red background
+            else if (isSoon) bgColor = 'rgba(255, 165, 0, 0.2)'; // orange background
+          }
+          
+          const isStriked = isCompleted;
+          
+          html += `
+                <li style="display:flex; justify-content:space-between; align-items:center; padding:1rem; border-bottom:1px solid var(--border); background-color: ${bgColor}; border-radius: 8px; margin-bottom: 0.5rem; transition: background-color 0.3s;">
+                  <div style="display:flex; align-items:center; gap: 1rem; flex:1;">
+                    <input type="checkbox" class="task-checkbox" data-id="${e.id}" ${isCompleted ? 'checked' : ''} style="width: 20px; height: 20px; cursor: pointer; accent-color: var(--primary);">
+                    <div>
+                      <div style="font-weight:600; font-size:1.1rem; text-decoration: ${isStriked ? 'line-through' : 'none'}; color:${isStriked ? 'var(--text-secondary)' : 'var(--text-primary)'}">${escapeHtml(e.title)}</div>
+                      <div style="color:var(--text-secondary); font-size:0.9rem; margin-top:0.25rem;">
+                         ${isPast ? '✅ חלף התאריך' : '⏳'} ${displayDate}
+                      </div>
+                    </div>
+                  </div>
+                </li>
+          `;
+        }
+        
+        html += `
+              </ul>
+            </div>
+          </div>
+        `;
+      }
+      html += '</div>';
+      container.innerHTML = html;
+
+      // Attach event listeners for checkboxes
+      container.querySelectorAll('.task-checkbox').forEach(cb => {
+        cb.addEventListener('change', async (e) => {
+          const id = e.target.getAttribute('data-id');
+          const is_completed = e.target.checked;
+          try {
+            await api('/calendar/' + id + '/toggle', {
+              method: 'PUT',
+              body: JSON.stringify({ is_completed })
+            });
+            renderTasks();
+          } catch (err) {
+            console.error(err);
+            toast('שגיאה בעדכון המטלה', 'error');
+            e.target.checked = !is_completed;
+          }
+        });
+      });
+
+    } catch (error) {
+      document.getElementById('tasks-container').innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">⚠️</div>
+          <h3>שגיאה בטעינת המטלות</h3>
+          <p>${escapeHtml(error.message)}</p>
+        </div>
+      `;
+    }
+  }
+
+  function showSyncMoodleModal() {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-content" style="text-align:right;">
+        <h2>🔄 סנכרון עם BGU Moodle</h2>
+        <p style="color:var(--text-secondary); margin-bottom:1.5rem;">
+          הכנס את פרטי ההתחברות שלך למודל. הפרטים אינם נשמרים בשרת ומשמשים באופן חד-פעמי למשיכת האירועים.
+        </p>
+        <div class="form-group">
+          <label>שם משתמש (Moodle)</label>
+          <input class="input" id="sync-username" type="text" placeholder="הכנס שם משתמש" autofocus />
+        </div>
+        <div class="form-group" style="margin-top:1rem;">
+          <label>סיסמה</label>
+          <input class="input" id="sync-password" type="password" placeholder="הכנס סיסמה" />
+        </div>
+        <div class="modal-actions" style="margin-top:2rem;">
+          <button class="btn btn-ghost" id="modal-cancel">ביטול</button>
+          <button class="btn btn-primary" id="modal-sync">סנכרן עכשיו</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) overlay.remove();
+    });
+    document.getElementById('modal-cancel').addEventListener('click', () => overlay.remove());
+
+    const syncBtn = document.getElementById('modal-sync');
+    syncBtn.addEventListener('click', async () => {
+      const u = document.getElementById('sync-username').value;
+      const p = document.getElementById('sync-password').value;
+      if (!u || !p) return toast('חובה להזין שם משתמש וסיסמה', 'warning');
+      
+      syncBtn.disabled = true;
+      syncBtn.innerHTML = '<div class="spinner"></div> ממתין ל-Moodle... (כ-10 שניות)';
+      
+      try {
+        const result = await api('/calendar/sync-moodle', {
+          method: 'POST',
+          body: JSON.stringify({ moodle_username: u, moodle_password: p, user_id: currentUser.id })
+        });
+        
+        overlay.remove();
+        toast(`סנכרון הושלם! נוספו ${result.addedCount} מטלות חדשות.`, 'success');
+        renderTasks();
+      } catch (err) {
+        toast('שגיאה: ' + err.message, 'error');
+        syncBtn.disabled = false;
+        syncBtn.innerHTML = 'סנכרן עכשיו';
+      }
+    });
+  }
 
   /* ═════════════════════════════════════════════════════
      VIEW 1: Home — Semester Dashboard
