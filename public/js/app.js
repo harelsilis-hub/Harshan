@@ -15,8 +15,10 @@
       ...opts,
     });
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error || 'Request failed');
+      const errPayload = await res.json().catch(() => ({ error: res.statusText }));
+      const errorObj = new Error(errPayload.error || 'Request failed');
+      Object.assign(errorObj, errPayload);
+      throw errorObj;
     }
     return res.status === 204 ? null : res.json();
   }
@@ -29,6 +31,33 @@
     el.innerHTML = `<span>${icons[type] || ''}</span> ${message}`;
     document.getElementById('toast-container').appendChild(el);
     setTimeout(() => el.remove(), 3200);
+  }
+
+  function confirmModal(message) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal-content" style="max-width: 400px; text-align: center; border-radius: 12px; padding: 2rem;">
+          <h3 style="margin-bottom: 1rem; color: var(--text-primary);">אישור פעולה</h3>
+          <p style="margin-bottom: 1.5rem; color: var(--text-secondary); line-height: 1.5;">${message.replace(/\n/g, '<br>')}</p>
+          <div class="modal-actions" style="display: flex; gap: 1rem; justify-content: center;">
+            <button id="custom-confirm-yes" class="btn btn-primary" style="flex: 1;">כן</button>
+            <button id="custom-confirm-no" class="btn" style="flex: 1; background: var(--surface); color: var(--text-primary); border: 1px solid var(--border);">לא</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      document.getElementById('custom-confirm-yes').addEventListener('click', () => {
+        overlay.remove();
+        resolve(true);
+      });
+      document.getElementById('custom-confirm-no').addEventListener('click', () => {
+        overlay.remove();
+        resolve(false);
+      });
+    });
   }
 
   /* ── Utilities ─────────────────────────────────────── */
@@ -58,13 +87,109 @@
     return div.innerHTML;
   }
 
+  function renderMarkdown(text) {
+    if (!text) return '';
+    
+    // 1. Extract Math to protect it from marked.js parsing (e.g. asterisks becoming italics)
+    const mathBlocks = [];
+    
+    // Match $$...$$
+    let safeText = text.replace(/\$\$([\s\S]*?)\$\$/g, (match, math) => {
+      mathBlocks.push({ display: true, math });
+      return `@@MATH_${mathBlocks.length - 1}@@`;
+    });
+    
+    // Match $...$
+    safeText = safeText.replace(/\$([^\$]*?)\$/g, (match, math) => {
+      mathBlocks.push({ display: false, math });
+      return `@@MATH_${mathBlocks.length - 1}@@`;
+    });
+    
+    // Escape < and > for regular text to prevent HTML tag parsing issues
+    safeText = safeText.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    
+    // 2. Parse markdown
+    let html = marked.parse(safeText);
+    
+    // 3. Restore Math blocks
+    html = html.replace(/@@MATH_(\d+)@@/g, (match, i) => {
+      const block = mathBlocks[i];
+      // Escape < and > inside math so browser doesn't parse them as HTML tags,
+      // KaTeX will read the DOM text nodes and see the actual < and > characters.
+      const escapedMath = block.math.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const delim = block.display ? '$$' : '$';
+      return `<span class="raw-math">${delim}${escapedMath}${delim}</span>`;
+    });
+    
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    
+    // 4. Render KaTeX math
+    if (window.renderMathInElement) {
+      window.renderMathInElement(div, {
+        delimiters: [
+          {left: '$$', right: '$$', display: true},
+          {left: '$', right: '$', display: false}
+        ],
+        throwOnError: false
+      });
+    }
+    
+    // 5. Fix bidi for pure math/english that wasn't wrapped in KaTeX
+    const walk = document.createTreeWalker(div, NodeFilter.SHOW_TEXT, null, false);
+    let node;
+    const nodesToReplace = [];
+    while(node = walk.nextNode()) {
+      const p = node.parentElement;
+      if (p && (
+        p.closest('code') || 
+        p.closest('bdi') || 
+        p.closest('.katex') || 
+        p.closest('.katex-error') || 
+        p.closest('.raw-math') // Just in case KaTeX fails
+      )) continue;
+      
+      if (/[a-zA-Z0-9=<>\+\-\*]/.test(node.nodeValue)) {
+        nodesToReplace.push(node);
+      }
+    }
+    
+    nodesToReplace.forEach(n => {
+      const fragments = document.createDocumentFragment();
+      let lastIndex = 0;
+      let match;
+      const simpleRegex = /([a-zA-Z0-9\(\)\[\]\{\}\+\-\*\/\=\<\>_][a-zA-Z0-9\(\)\[\]\{\}\+\-\*\/\=\<\>_\s\.,]*[a-zA-Z0-9\(\)\[\]\{\}\+\-\*\/\=\<\>_]|[a-zA-Z0-9\=\<\>])/g;
+      
+      while ((match = simpleRegex.exec(n.nodeValue)) !== null) {
+        if (/[a-zA-Z0-9=<>\+\-\*]/.test(match[0])) {
+          if (match.index > lastIndex) {
+            fragments.appendChild(document.createTextNode(n.nodeValue.substring(lastIndex, match.index)));
+          }
+          const bdi = document.createElement('bdi');
+          bdi.dir = 'ltr';
+          bdi.textContent = match[0];
+          fragments.appendChild(bdi);
+          lastIndex = simpleRegex.lastIndex;
+        }
+      }
+      if (lastIndex < n.nodeValue.length) {
+        fragments.appendChild(document.createTextNode(n.nodeValue.substring(lastIndex)));
+      }
+      if (fragments.childNodes.length > 0) {
+        n.parentNode.replaceChild(fragments, n);
+      }
+    });
+    
+    return div.innerHTML;
+  }
+
   function showSummaryModal(summaryText) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
       <div class="modal-content" style="max-width:600px; max-height:80vh; overflow-y:auto; text-align:right;">
         <h2 style="margin-bottom:1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem;">📖 סיכום הרצאה</h2>
-        <div class="summary-text" style="font-size: 1rem; line-height: 1.7; white-space: pre-wrap; margin-bottom: 1.5rem;">${escapeHtml(summaryText)}</div>
+        <div class="summary-text markdown-body" style="font-size: 1rem; line-height: 1.7; margin-bottom: 1.5rem;" dir="rtl">${renderMarkdown(summaryText)}</div>
         <div class="modal-actions" style="border-top: 1px solid var(--border); padding-top: 1rem;">
           <button class="btn btn-primary" id="modal-close-summary">סגור</button>
         </div>
@@ -84,16 +209,235 @@
 
   function getRoute() {
     const hash = window.location.hash || '#/';
-    const match = hash.match(/^#\/course\/(\d+)/);
+    if (hash === '#/community') return { view: 'community' };
+    if (hash === '#/login') return { view: 'auth', mode: 'login' };
+    if (hash === '#/register') return { view: 'auth', mode: 'register' };
+    
+    let match = hash.match(/^#\/course\/(\d+)/);
     if (match) return { view: 'course', courseId: parseInt(match[1], 10) };
+    
+    match = hash.match(/^#\/semester\/(\d+)/);
+    if (match) return { view: 'semester', semesterId: parseInt(match[1], 10) };
+
     return { view: 'home' };
+  }
+
+  let currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  
+  // Temporary state for new user Google Auth
+  let pendingGoogleCredential = null;
+
+  async function renderAuth() {
+    $app.innerHTML = `
+      <div class="auth-container">
+        <div class="auth-card fade-in">
+          <div class="auth-header">
+            <div class="auth-icon">🧠</div>
+            <h2>ברוך הבא!</h2>
+            <p>התחבר לחשבון שלך באמצעות גוגל כדי להמשיך ללמוד</p>
+          </div>
+          
+          <div id="google-btn-container" style="display:flex; justify-content:center; margin-top: 2rem;">
+             <!-- Google Sign In Button will render here -->
+          </div>
+
+          <form id="profile-form" class="auth-form slide-in" style="display: none; margin-top: 2rem;">
+            <hr style="margin-bottom: 1.5rem; border-top: 1px solid var(--border);">
+            <h3 style="text-align: center; margin-bottom: 1.5rem; color: var(--text);">השלמת הרשמה</h3>
+            
+            <div class="form-group slide-in">
+              <label>אוניברסיטה / מוסד לימודים</label>
+              <input class="input" id="auth-university" list="universities-list" placeholder="בחר או הקלד מוסד לימודים..." required>
+              <datalist id="universities-list">
+                <option value="אוניברסיטת תל אביב">
+                <option value="האוניברסיטה העברית בירושלים">
+                <option value="הטכניון - מכון טכנולוגי לישראל">
+                <option value="אוניברסיטת בן-גוריון בנגב">
+                <option value="אוניברסיטת בר-אילן">
+                <option value="אוניברסיטת חיפה">
+                <option value="אוניברסיטת אריאל בשומרון">
+                <option value="מכון ויצמן למדע">
+                <option value="האוניברסיטה הפתוחה">
+                <option value="אוניברסיטת רייכמן">
+                <option value="המסלול האקדמי המכללה למינהל">
+                <option value="המכון הטכנולוגי חולון (HIT)">
+                <option value="המכללה האקדמית תל אביב יפו">
+                <option value="שנקר - הנדסה. עיצוב. אמנות">
+                <option value="המכללה האקדמית ספיר">
+                <option value="המכללה האקדמית עמק יזרעאל">
+                <option value="המכללה האקדמית תל-חי">
+                <option value="המכללה האקדמית אשקלון">
+                <option value="המכללה האקדמית סמי שמעון (SCE)">
+                <option value="המכללה האקדמית הדסה ירושלים">
+                <option value="המכללה האקדמית רופין">
+                <option value="המכללה האקדמית נתניה">
+                <option value="בצלאל אקדמיה לאמנות ועיצוב">
+              </datalist>
+            </div>
+            <div class="form-group slide-in" style="margin-top: 1.25rem;">
+              <label>שם מלא</label>
+              <input class="input" id="auth-leaderboard" type="text" placeholder="הכנס את שמך המלא" required>
+            </div>
+            <div class="form-row slide-in" style="margin-top: 1.25rem;">
+              <div class="form-group">
+                <label>שנת לימוד (1-7)</label>
+                <input class="input" id="auth-year" type="number" min="1" max="7" placeholder="1" required>
+              </div>
+              <div class="form-group">
+                <label>סמסטר (1-3)</label>
+                <input class="input" id="auth-semester" type="number" min="1" max="3" placeholder="1" required>
+              </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary auth-submit-btn" id="btn-submit-profile">
+              סיים הרשמה
+            </button>
+          </form>
+        </div>
+      </div>
+    `;
+
+    // Wait a brief moment to ensure Google script is loaded, then initialize
+    const initGoogle = () => {
+      if (window.google && google.accounts && google.accounts.id) {
+        google.accounts.id.initialize({
+          client_id: '611572387185-locggqgusn3a64r1eijdei4gege59ltf.apps.googleusercontent.com',
+          callback: handleGoogleAuth
+        });
+        google.accounts.id.renderButton(
+          document.getElementById('google-btn-container'),
+          { theme: 'filled_black', size: 'large', type: 'standard', shape: 'pill', text: 'continue_with' }
+        );
+      } else {
+        setTimeout(initGoogle, 100);
+      }
+    };
+    initGoogle();
+
+    async function handleGoogleAuth(response) {
+      pendingGoogleCredential = response.credential;
+      await attemptLogin({ credential: pendingGoogleCredential });
+    }
+
+    async function attemptLogin(payload) {
+      try {
+        const user = await api('/auth/login', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+        
+        // Success
+        currentUser = user;
+        localStorage.setItem('currentUser', JSON.stringify(user));
+        pendingGoogleCredential = null;
+        
+        window.location.hash = '#/';
+        if (window.location.hash === '#/') {
+          onRoute();
+        }
+      } catch (err) {
+        if (err.requiresProfileCompletion) {
+          // Show the profile completion form
+          document.getElementById('google-btn-container').style.display = 'none';
+          document.getElementById('profile-form').style.display = 'block';
+          // Pre-fill the name if possible
+          if (err.name) {
+            document.getElementById('auth-leaderboard').value = err.name;
+          }
+          toast('ברוך הבא! אנא השלם את פרטי ההרשמה.', 'info');
+        } else {
+          toast(err.message || 'שגיאה בהתחברות לגוגל', 'error');
+        }
+      }
+    }
+
+    document.getElementById('profile-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!pendingGoogleCredential) return;
+      
+      const payload = {
+        credential: pendingGoogleCredential,
+        university: document.getElementById('auth-university').value.trim(),
+        year: document.getElementById('auth-year').value,
+        semester: document.getElementById('auth-semester').value,
+        leaderboard_name: document.getElementById('auth-leaderboard').value.trim()
+      };
+
+      const btn = document.getElementById('btn-submit-profile');
+      btn.disabled = true;
+      btn.textContent = 'מסיים הרשמה...';
+
+      await attemptLogin(payload);
+
+      btn.disabled = false;
+      btn.textContent = 'סיים הרשמה';
+    });
+  }
+
+  function getTitleForLevel(level) {
+    if (level < 5) return 'תלמיד מתחיל';
+    if (level < 10) return 'סטודנט מצטיין';
+    if (level < 20) return 'תותח אקדמי';
+    if (level < 30) return 'עוזר מחקר';
+    if (level < 50) return 'מרצה חבר';
+    return 'פרופסור מן המניין';
+  }
+
+  function updateNav() {
+    const topnav = document.getElementById('topnav');
+    const greeting = document.getElementById('nav-greeting');
+    const gamification = document.getElementById('nav-gamification');
+    const btnLogout = document.getElementById('btn-logout');
+    
+    const route = getRoute();
+
+    if (topnav) {
+      topnav.style.display = route.view === 'auth' ? 'none' : 'flex';
+    }
+    
+    if (currentUser && route.view !== 'auth') {
+      if (greeting) {
+        const displayName = currentUser.leaderboard_name || currentUser.username;
+        greeting.textContent = 'שלום ' + displayName;
+        greeting.style.display = 'inline';
+      }
+      if (btnLogout) btnLogout.style.display = 'inline-block';
+      if (gamification && currentUser.level !== undefined) {
+        gamification.style.display = 'flex';
+        document.getElementById('nav-level').textContent = `רמה ${currentUser.level}: ${getTitleForLevel(currentUser.level)}`;
+        document.getElementById('nav-xp').textContent = `${currentUser.xp} XP`;
+        document.getElementById('nav-streak').textContent = `🔥 ${currentUser.current_streak}`;
+        document.getElementById('nav-reputation').textContent = `⭐ ${currentUser.reputation}`;
+      } else if (gamification) {
+        gamification.style.display = 'none';
+      }
+    } else {
+      if (greeting) greeting.style.display = 'none';
+      if (btnLogout) btnLogout.style.display = 'none';
+      if (gamification) gamification.style.display = 'none';
+    }
   }
 
   async function onRoute() {
     const route = getRoute();
+    
+    if (!currentUser && route.view !== 'auth') {
+      navigate('#/login');
+      return;
+    }
+
+    updateNav();
+
+    if (route.view === 'auth') {
+      await renderAuth(route.mode);
+      return;
+    }
+
     $app.innerHTML = '<div class="loading-state"><div class="spinner spinner-lg"></div>טוען...</div>';
     try {
       if (route.view === 'course') await renderCourseDetail(route.courseId);
+      else if (route.view === 'semester') await renderSemesterDetail(route.semesterId);
+      else if (route.view === 'community') await renderCommunity();
       else await renderHome();
     } catch (err) {
       console.error(err);
@@ -102,17 +446,147 @@
   }
 
   window.addEventListener('hashchange', onRoute);
-  window.addEventListener('DOMContentLoaded', onRoute);
+  window.addEventListener('DOMContentLoaded', () => {
+    onRoute();
+    const btnLogout = document.getElementById('btn-logout');
+    if (btnLogout) {
+      btnLogout.addEventListener('click', () => {
+        currentUser = null;
+        localStorage.removeItem('currentUser');
+        window.location.hash = '#/login';
+      });
+    }
+  });
 
   /* ═════════════════════════════════════════════════════
-     VIEW 1: Home — Course Dashboard
+     VIEW 1: Home — Semester Dashboard
      ═════════════════════════════════════════════════════ */
   async function renderHome() {
-    const courses = await api('/courses');
+    const semesters = await api('/semesters');
 
     $app.innerHTML = `
       <div class="page-header">
-        <h1>📚 הקורסים שלך</h1>
+        <h1>📁 הסמסטרים שלך</h1>
+        <button class="btn btn-primary" id="btn-new-semester">
+          <span>+</span> סמסטר חדש
+        </button>
+      </div>
+      ${semesters.length === 0
+        ? `<div class="empty-state">
+             <div class="empty-icon">📅</div>
+             <h3>אין סמסטרים עדיין</h3>
+             <p>צור תיקיית סמסטר כדי לארגן את הקורסים שלך.</p>
+             <button class="btn btn-primary btn-lg" id="btn-empty-create-semester">צור סמסטר</button>
+           </div>`
+        : `<div class="course-grid">${semesters.map(s => `
+             <div class="card course-card" data-id="${s.id}" data-type="semester">
+               <div class="card-header">
+                 <div>
+                   <div class="card-title">${escapeHtml(s.name)}</div>
+                   <div style="margin-top:0.5rem">
+                     <span class="badge badge-success">${s.course_count} קורסים</span>
+                   </div>
+                 </div>
+                 <button class="delete-btn" data-id="${s.id}" data-name="${escapeHtml(s.name)}" data-type="semester" title="מחק סמסטר">🗑️</button>
+               </div>
+             </div>
+           `).join('')}</div>`
+      }
+    `;
+
+    document.getElementById('btn-new-semester')?.addEventListener('click', showCreateSemesterModal);
+    document.getElementById('btn-empty-create-semester')?.addEventListener('click', showCreateSemesterModal);
+
+    $app.querySelectorAll('.course-card[data-type="semester"]').forEach((el) => {
+      const id = el.dataset.id;
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('.delete-btn')) return;
+        navigate(`#/semester/${id}`);
+      });
+    });
+
+    $app.querySelectorAll('.delete-btn[data-type="semester"]').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        const name = btn.dataset.name;
+        const approved = await confirmModal(`מחק "${name}" וכל הקורסים בתוכו?`);
+        if (!approved) return;
+        try {
+          await api(`/semesters/${id}`, { method: 'DELETE' });
+          toast('הסמסטר נמחק', 'success');
+          renderHome();
+        } catch (err) {
+          toast(err.message, 'error');
+        }
+      });
+    });
+  }
+
+  function showCreateSemesterModal() {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-content" style="text-align:right;">
+        <h2>📅 סמסטר חדש</h2>
+        <div class="form-group">
+          <label>שם הסמסטר</label>
+          <input class="input" id="semester-name" type="text" placeholder="למשל: שנה א׳ סמסטר א׳" autofocus />
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" id="modal-cancel">ביטול</button>
+          <button class="btn btn-primary" id="modal-create">צור</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) overlay.remove();
+    });
+    document.getElementById('modal-cancel').addEventListener('click', () => overlay.remove());
+
+    const input = document.getElementById('semester-name');
+    const createBtn = document.getElementById('modal-create');
+
+    async function doCreate() {
+      const name = input.value.trim();
+      if (!name) { input.focus(); return; }
+      createBtn.innerHTML = '<div class="spinner"></div>';
+      createBtn.disabled = true;
+      try {
+        await api('/semesters', {
+          method: 'POST',
+          body: JSON.stringify({ name }),
+        });
+        overlay.remove();
+        toast('הסמסטר נוצר!', 'success');
+        renderHome();
+      } catch (err) {
+        toast(err.message, 'error');
+        createBtn.textContent = 'צור';
+        createBtn.disabled = false;
+      }
+    }
+
+    createBtn.addEventListener('click', doCreate);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doCreate(); });
+    setTimeout(() => input.focus(), 100);
+  }
+
+  /* ═════════════════════════════════════════════════════
+     VIEW 1.5: Semester Detail
+     ═════════════════════════════════════════════════════ */
+  async function renderSemesterDetail(semesterId) {
+    const [semester, courses] = await Promise.all([
+      api(`/semesters/${semesterId}`),
+      api(`/courses?semester_id=${semesterId}`)
+    ]);
+
+    $app.innerHTML = `
+      <a href="#/" class="back-link">← חזור לסמסטרים</a>
+      <div class="page-header">
+        <h1>📚 ${escapeHtml(semester.name)}</h1>
         <button class="btn btn-primary" id="btn-new-course">
           <span>+</span> קורס חדש
         </button>
@@ -120,17 +594,15 @@
       ${courses.length === 0
         ? `<div class="empty-state">
              <div class="empty-icon">🎓</div>
-             <h3>אין קורסים עדיין</h3>
-             <p>צור את הקורס הראשון שלך כדי להתחיל להעלות הרצאות ולבנות את חפיסת הכרטיסיות שלך.</p>
-             <button class="btn btn-primary btn-lg" id="btn-empty-create">צור קורס</button>
+             <h3>אין קורסים בסמסטר זה</h3>
+             <button class="btn btn-primary btn-lg" id="btn-empty-create-course">צור קורס</button>
            </div>`
         : `<div class="course-grid">${courses.map(courseCardHtml).join('')}</div>`
       }
     `;
 
-    // Event listeners
-    document.getElementById('btn-new-course')?.addEventListener('click', showCreateModal);
-    document.getElementById('btn-empty-create')?.addEventListener('click', showCreateModal);
+    document.getElementById('btn-new-course')?.addEventListener('click', () => showCreateCourseModal(semesterId));
+    document.getElementById('btn-empty-create-course')?.addEventListener('click', () => showCreateCourseModal(semesterId));
 
     $app.querySelectorAll('.course-card').forEach((el) => {
       const id = el.dataset.id;
@@ -145,16 +617,68 @@
         e.stopPropagation();
         const id = btn.dataset.id;
         const name = btn.dataset.name;
-        if (!confirm(`מחק "${name}" וכל ההרצאות והכרטיסיות שלו?`)) return;
+        const approved = await confirmModal(`מחק "${name}" וכל ההרצאות והכרטיסיות שלו?`);
+        if (!approved) return;
         try {
           await api(`/courses/${id}`, { method: 'DELETE' });
           toast('הקורס נמחק', 'success');
-          renderHome();
+          renderSemesterDetail(semesterId);
         } catch (err) {
           toast(err.message, 'error');
         }
       });
     });
+  }
+
+  function showCreateCourseModal(semesterId) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-content" style="text-align:right;">
+        <h2>📁 קורס חדש</h2>
+        <div class="form-group">
+          <label>שם הקורס</label>
+          <input class="input" id="course-name" type="text" placeholder="למשל: אלגברה לינארית" autofocus />
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" id="modal-cancel">ביטול</button>
+          <button class="btn btn-primary" id="modal-create">צור</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) overlay.remove();
+    });
+    document.getElementById('modal-cancel').addEventListener('click', () => overlay.remove());
+
+    const input = document.getElementById('course-name');
+    const createBtn = document.getElementById('modal-create');
+
+    async function doCreate() {
+      const name = input.value.trim();
+      if (!name) { input.focus(); return; }
+      createBtn.innerHTML = '<div class="spinner"></div>';
+      createBtn.disabled = true;
+      try {
+        await api('/courses', {
+          method: 'POST',
+          body: JSON.stringify({ name, semester_id: semesterId }),
+        });
+        overlay.remove();
+        toast('הקורס נוצר!', 'success');
+        renderSemesterDetail(semesterId);
+      } catch (err) {
+        toast(err.message, 'error');
+        createBtn.textContent = 'צור';
+        createBtn.disabled = false;
+      }
+    }
+
+    createBtn.addEventListener('click', doCreate);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doCreate(); });
+    setTimeout(() => input.focus(), 100);
   }
 
   function courseCardHtml(c) {
@@ -191,58 +715,6 @@
     `;
   }
 
-  /* ── צור קורס Modal ───────────────────────────── */
-  function showCreateModal() {
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.innerHTML = `
-      <div class="modal-content">
-        <h2>📁 קורס חדש</h2>
-        <div class="form-group">
-          <label for="course-name">שם הקורס</label>
-          <input class="input" id="course-name" type="text" placeholder="למשל: אלגברה לינארית" autofocus />
-        </div>
-        <div class="modal-actions">
-          <button class="btn btn-ghost" id="modal-cancel">ביטול</button>
-          <button class="btn btn-primary" id="modal-create">צור</button>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(overlay);
-
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) overlay.remove();
-    });
-    document.getElementById('modal-cancel').addEventListener('click', () => overlay.remove());
-
-    const input = document.getElementById('course-name');
-    const createBtn = document.getElementById('modal-create');
-
-    async function doCreate() {
-      const name = input.value.trim();
-      if (!name) { input.focus(); return; }
-      createBtn.innerHTML = '<div class="spinner"></div>';
-      createBtn.disabled = true;
-      try {
-        await api('/courses', {
-          method: 'POST',
-          body: JSON.stringify({ name }),
-        });
-        overlay.remove();
-        toast('הקורס נוצר!', 'success');
-        renderHome();
-      } catch (err) {
-        toast(err.message, 'error');
-        createBtn.textContent = 'צור';
-        createBtn.disabled = false;
-      }
-    }
-
-    createBtn.addEventListener('click', doCreate);
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doCreate(); });
-    setTimeout(() => input.focus(), 100);
-  }
-
   /* ═════════════════════════════════════════════════════
      VIEW 2: Course Detail
      ═════════════════════════════════════════════════════ */
@@ -253,14 +725,17 @@
     ]);
 
     $app.innerHTML = `
-      <a href="#/" class="back-link">← חזור לקורסים</a>
-      <div class="page-header">
-        <h1>${escapeHtml(course.name)}</h1>
-        <div class="card-stats" style="gap:1.5rem">
-          <div class="stat"><span class="stat-value">${course.lecture_count}</span><span class="stat-label">הרצאות</span></div>
-          <div class="stat"><span class="stat-value">${course.flashcard_count}</span><span class="stat-label">כרטיסיות</span></div>
-          <div class="stat"><span class="stat-value">${course.due_count}</span><span class="stat-label">לביצוע כעת</span></div>
+      <a href="#/semester/${course.semester_id}" class="back-link">← חזור לקורסים</a>
+      <div class="page-header" style="align-items:flex-start;">
+        <div>
+          <h1>${escapeHtml(course.name)}</h1>
+          <div class="card-stats" style="gap:1.5rem; margin-top:0.5rem;">
+            <div class="stat"><span class="stat-value">${course.lecture_count}</span><span class="stat-label">הרצאות</span></div>
+            <div class="stat"><span class="stat-value">${course.flashcard_count}</span><span class="stat-label">כרטיסיות</span></div>
+            <div class="stat"><span class="stat-value">${course.due_count}</span><span class="stat-label">לביצוע כעת</span></div>
+          </div>
         </div>
+        <button class="btn btn-warning" id="btn-cram-mode" style="background:#f59e0b; border-color:#f59e0b; color:white; font-weight:600;">🔥 מצב חרישה</button>
       </div>
 
       <div class="state-banner state-banner-learn" style="margin-bottom: 2rem;">
@@ -301,6 +776,33 @@
 
     initUploadEngine(courseId);
 
+    const cramBtn = document.getElementById('btn-cram-mode');
+    if (cramBtn) {
+      cramBtn.addEventListener('click', async () => {
+        try {
+          const cramCards = await api(`/courses/${courseId}/cram`);
+          if (!cramCards || cramCards.length === 0) {
+            toast('אין כרטיסיות לחרוש עליהן!', 'info');
+            return;
+          }
+          
+          $app.innerHTML = `
+            <div class="page-header" style="text-align:center; display:flex; flex-direction:column; align-items:center;">
+              <h1 style="font-size:1.8rem; color:#f59e0b;">🔥 מצב חרישה</h1>
+              <p style="color:var(--text-secondary); margin-top:0.5rem;">מתרגל את ${cramCards.length} הכרטיסיות הקשות ביותר שלך.</p>
+            </div>
+            <div id="sequence-container" style="max-width: 600px; margin: 0 auto;"></div>
+          `;
+          const seqContainer = document.getElementById('sequence-container');
+          await runSM2Reviews(courseId, cramCards, seqContainer, true);
+          toast('סיימת מצב חרישה! כל הכבוד!', 'success');
+          renderCourseDetail(courseId);
+        } catch (err) {
+          toast(err.message, 'error');
+        }
+      });
+    }
+
     $app.querySelectorAll('.view-summary-btn').forEach((btn, idx) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -313,13 +815,32 @@
         e.stopPropagation();
         const id = btn.dataset.id;
         const name = btn.dataset.name;
-        if (!confirm(`האם למחוק את ההרצאה "${name}" ואת כל הכרטיסיות שלה?`)) return;
+        const approved = await confirmModal(`האם למחוק את ההרצאה "${name}" ואת כל הכרטיסיות שלה?`);
+        if (!approved) return;
         try {
           await api(`/lectures/${id}`, { method: 'DELETE' });
           toast('ההרצאה נמחקה', 'success');
           renderCourseDetail(courseId);
         } catch (err) {
           toast(err.message, 'error');
+        }
+      });
+    });
+
+    $app.querySelectorAll('.share-lecture-btn').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        try {
+          btn.disabled = true;
+          await api(`/lectures/${btn.dataset.id}/share`, {
+            method: 'POST',
+            body: JSON.stringify({ is_public: 1 })
+          });
+          toast('הסיכום שותף עם הקהילה!', 'success');
+          renderCourseDetail(courseId);
+        } catch (err) {
+          toast(err.message, 'error');
+          btn.disabled = false;
         }
       });
     });
@@ -335,8 +856,10 @@
             <div>
               <div class="lecture-title">${escapeHtml(l.title)}</div>
               <div class="lecture-meta">${l.flashcard_count} כרטיסיות · ${timeAgo(l.created_at)}</div>
+              ${l.is_public ? `<div class="badge badge-success" style="font-size:0.7rem;">פורסם לקהילה</div>` : ''}
             </div>
-            <div>
+            <div style="display:flex; gap:0.5rem; align-items:center;">
+              ${!l.is_public ? `<button class="share-lecture-btn btn btn-outline btn-sm" data-id="${l.id}">שתף לקהילה</button>` : ''}
               <button class="view-summary-btn btn btn-ghost" title="הצג סיכום" style="color:var(--primary); padding:0.25rem 0.5rem; font-size:1.2rem;">📖</button>
               <button class="delete-lecture-btn btn btn-ghost" data-id="${l.id}" data-name="${escapeHtml(l.title)}" title="מחק הרצאה" style="color:var(--danger); padding:0.25rem 0.5rem; font-size:1.2rem;">🗑️</button>
             </div>
@@ -344,6 +867,202 @@
         `).join('')}
       </div>
     `;
+  }
+
+  /* ═════════════════════════════════════════════════════
+     VIEW 3: Community
+     ═════════════════════════════════════════════════════ */
+  async function renderCommunity() {
+    const params = new URLSearchParams({
+      university: currentUser.university,
+      year: currentUser.year,
+      semester: currentUser.semester
+    });
+
+    const [lectures, calendarEvents, leaderboard] = await Promise.all([
+      api(`/community/lectures?${params.toString()}`),
+      api(`/calendar?${params.toString()}`),
+      api(`/leaderboard?${params.toString()}`)
+    ]);
+
+    $app.innerHTML = `
+      <div class="page-header" style="text-align:center; display:flex; flex-direction:column; align-items:center;">
+        <h1 style="font-size:1.8rem;">קהילת הלמידה שלך</h1>
+        <p style="color:var(--text-secondary); margin-top:0.5rem;">${escapeHtml(currentUser.university)} · שנה ${currentUser.year} · סמסטר ${currentUser.semester}</p>
+      </div>
+
+      <div style="display:flex; gap:2rem; flex-wrap:wrap; margin-top:2rem;">
+        
+        <!-- Shared Summaries -->
+        <div style="flex:1; min-width:300px;">
+          <h2 style="margin-bottom:1rem; border-bottom:1px solid var(--border); padding-bottom:0.5rem;">📚 סיכומים ציבוריים</h2>
+          ${lectures.length === 0 ? '<div class="empty-state">אין סיכומים שותפו עדיין.</div>' : (() => {
+            const groupedLectures = {};
+            lectures.forEach(l => {
+              const cName = l.course_name || 'כללי';
+              if (!groupedLectures[cName]) groupedLectures[cName] = [];
+              groupedLectures[cName].push(l);
+            });
+
+            return Object.entries(groupedLectures).map(([courseName, courseLectures]) => `
+              <details class="card course-folder" style="margin-bottom:1rem; cursor:pointer;">
+                <summary style="padding:1rem; font-weight:bold; font-size:1.2rem; outline:none; display:flex; align-items:center; gap:0.5rem; list-style:none;">
+                  📁 ${escapeHtml(courseName)} <span class="badge badge-primary" style="margin-right:auto;">${courseLectures.length} סיכומים</span>
+                </summary>
+                <div style="padding:0 1rem 1rem 1rem;">
+                  ${courseLectures.map(l => `
+                    <div class="card lecture-item" style="padding:1rem; margin-top:1rem; border-right:3px solid var(--primary); background: var(--background);">
+                      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                        <div>
+                          <div class="lecture-title" style="font-size:1.1rem; font-weight:600;">${escapeHtml(l.title)}</div>
+                          <div class="lecture-meta" style="color:var(--text-secondary); font-size:0.9rem;">
+                            פורסם ע"י: ${escapeHtml(l.author_name)}
+                          </div>
+                        </div>
+                        <div style="text-align:center;">
+                          <button class="btn btn-ghost btn-like" data-id="${l.id}" style="font-size:1.2rem; padding:0.25rem;">👍</button>
+                          <div style="font-size:0.8rem; font-weight:bold;">${l.likes} לייקים</div>
+                        </div>
+                      </div>
+                      <div style="margin-top:1rem;">
+                        <button class="btn btn-outline btn-sm comm-view-summary-btn" data-id="${l.id}">📖 קרא סיכום</button>
+                      </div>
+                    </div>
+                  `).join('')}
+                </div>
+              </details>
+            `).join('');
+          })()}
+        </div>
+
+        <!-- Shared Calendar -->
+        <div style="flex:1; min-width:300px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border); padding-bottom:0.5rem; margin-bottom:1rem;">
+            <h2 style="margin:0;">📅 לוח מבחנים והגשות</h2>
+            <button class="btn btn-sm btn-primary" id="btn-add-event">+ הוסף אירוע</button>
+          </div>
+          ${calendarEvents.length === 0 ? '<div class="empty-state">אין אירועים בלוח השנה.</div>' : ''}
+          <div class="calendar-list">
+            ${calendarEvents.map(e => {
+              const dateObj = new Date(e.event_date);
+              const formattedDate = dateObj.toLocaleDateString('he-IL');
+              const isPast = dateObj < new Date();
+              return `
+              <div class="card" style="padding:1rem; margin-bottom:1rem; border-right: 4px solid ${isPast ? 'var(--text-secondary)' : 'var(--primary)'}; opacity: ${isPast ? '0.6' : '1'};">
+                <div style="font-weight:600; font-size:1.1rem;">${escapeHtml(e.title)}</div>
+                <div style="color:var(--text-secondary); font-size:0.9rem; margin-top:0.25rem;">תאריך: ${formattedDate}</div>
+              </div>
+            `}).join('')}
+          </div>
+        </div>
+
+        <!-- Leaderboard -->
+        <div style="flex:1; min-width:300px;">
+          <h2 style="margin-bottom:1rem; border-bottom:1px solid var(--border); padding-bottom:0.5rem;">🏆 טבלת אלופים</h2>
+          <div class="card" style="padding: 0;">
+            <table style="width: 100%; border-collapse: collapse; text-align: right;">
+              <thead>
+                <tr style="background: var(--surface); border-bottom: 1px solid var(--border);">
+                  <th style="padding: 0.8rem; font-weight: 600;">מקום</th>
+                  <th style="padding: 0.8rem; font-weight: 600;">סטודנט</th>
+                  <th style="padding: 0.8rem; font-weight: 600;">רמה</th>
+                  <th style="padding: 0.8rem; font-weight: 600;">XP</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${leaderboard.length === 0 ? '<tr><td colspan="4" style="padding: 1rem; text-align: center;">טרם דורגו סטודנטים</td></tr>' : ''}
+                ${leaderboard.map((user, idx) => {
+                  const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1);
+                  const isMe = user.id === currentUser.id;
+                  return `
+                    <tr style="border-bottom: 1px solid var(--border); ${isMe ? 'background: rgba(59, 130, 246, 0.1); font-weight: bold;' : ''}">
+                      <td style="padding: 0.8rem; font-size: 1.2rem;">${medal}</td>
+                      <td style="padding: 0.8rem;">
+                        <div style="font-weight: 600;">${escapeHtml(user.leaderboard_name || user.username)}</div>
+                        <div style="font-size: 0.8rem; color: var(--text-secondary);">🔥 ${user.current_streak} · ⭐ ${user.reputation}</div>
+                      </td>
+                      <td style="padding: 0.8rem;">${user.level}</td>
+                      <td style="padding: 0.8rem; color: var(--primary); font-weight: bold;">${user.xp}</td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+
+    $app.querySelectorAll('.comm-view-summary-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = parseInt(btn.dataset.id, 10);
+        const lect = lectures.find(x => x.id === id);
+        if (lect) showSummaryModal(lect.summary_content);
+      });
+    });
+
+    $app.querySelectorAll('.btn-like').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        try {
+          await api(`/lectures/${btn.dataset.id}/like`, { method: 'POST' });
+          toast('סימנת לייק!', 'success');
+          renderCommunity();
+        } catch(e) {
+          toast(e.message, 'error');
+        }
+      });
+    });
+
+    document.getElementById('btn-add-event')?.addEventListener('click', () => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal-content" style="text-align:right;">
+          <h2>📅 הוסף אירוע חדש</h2>
+          <div class="form-group">
+            <label>כותרת (למשל: מועד א' באלגברה)</label>
+            <input class="input" id="event-title" type="text" autofocus>
+          </div>
+          <div class="form-group">
+            <label>תאריך</label>
+            <input class="input" id="event-date" type="date">
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-ghost" id="modal-cancel-event">ביטול</button>
+            <button class="btn btn-primary" id="modal-save-event">שמור</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      document.getElementById('modal-cancel-event').addEventListener('click', () => overlay.remove());
+      document.getElementById('modal-save-event').addEventListener('click', async () => {
+        const title = document.getElementById('event-title').value.trim();
+        const date = document.getElementById('event-date').value;
+        if(!title || !date) return toast('חובה למלא כותרת ותאריך', 'error');
+
+        try {
+          document.getElementById('modal-save-event').disabled = true;
+          await api('/calendar', {
+            method: 'POST',
+            body: JSON.stringify({
+              university: currentUser.university,
+              year: currentUser.year,
+              semester: currentUser.semester,
+              title,
+              event_date: date,
+              created_by_user_id: currentUser.id
+            })
+          });
+          overlay.remove();
+          toast('אירוע נוצר!', 'success');
+          renderCommunity();
+        } catch(err) {
+          toast(err.message, 'error');
+          document.getElementById('modal-save-event').disabled = false;
+        }
+      });
+    });
   }
 
   /* ═════════════════════════════════════════════════════
@@ -365,6 +1084,12 @@
       ]);
 
       if (uploadResult.error) throw new Error(uploadResult.error);
+
+      if (uploadResult.user) {
+        currentUser = uploadResult.user;
+        localStorage.setItem('currentUser', JSON.stringify(currentUser));
+        updateNav();
+      }
 
       const summary = uploadResult.lecture.summary_content;
       const newFlashcards = uploadResult.new_flashcards;
@@ -424,7 +1149,7 @@
   }
 
   /* ── Stage 2: SM-2 Reviews ───────────────────────────── */
-  function runSM2Reviews(courseId, dueכרטיסיות, container) {
+  function runSM2Reviews(courseId, dueכרטיסיות, container, isCramMode = false) {
     return new Promise((resolve) => {
       let currentIndex = 0;
       let totalReviewed = 0;
@@ -443,10 +1168,10 @@
 
         container.innerHTML = `
           <div class="state-banner state-banner-review">
-            <div class="state-icon">🔒</div>
+            <div class="state-icon">${isCramMode ? '🔥' : '🔒'}</div>
             <div class="state-info">
-              <h3>שלב 1: חזרה על הרצאות קודמות</h3>
-              <p>ענה על ${totalכרטיסיות - currentIndex} שאלות לפני למידת חומר חדש.</p>
+              <h3>${isCramMode ? 'מצב חרישה' : 'שלב 1: חזרה על הרצאות קודמות'}</h3>
+              <p>${isCramMode ? `ענה על ${totalכרטיסיות - currentIndex} שאלות.` : `ענה על ${totalכרטיסיות - currentIndex} שאלות לפני למידת חומר חדש.`}</p>
             </div>
           </div>
           
@@ -465,13 +1190,13 @@
               <span>📖 ${escapeHtml(card.lecture_title)}</span>
               ${card.lecture_summary ? `<button class="btn btn-ghost btn-sm btn-show-summary" style="padding:0.2rem 0.5rem;">הצג סיכום</button>` : ''}
             </div>
-            <div class="question-text">${escapeHtml(card.question_text)}</div>
+            <div class="question-text markdown-body" dir="rtl" style="margin-bottom: 1.5rem;">${renderMarkdown(card.question_text)}</div>
             <ul class="options-list">
               ${options.map((opt, i) => `
                 <li>
                   <button class="option-btn" data-answer="${escapeHtml(opt)}" data-correct="${opt === card.correct_answer}">
                     <span class="option-key">${keys[i]}</span>
-                    <span>${escapeHtml(opt)}</span>
+                    <span class="option-content markdown-body" dir="rtl">${renderMarkdown(opt)}</span>
                   </button>
                 </li>
               `).join('')}
@@ -515,22 +1240,27 @@
             <div class="feedback-text">
               ${isCorrect
                 ? '<strong>נכון!</strong> זיכרון מצוין.'
-                : `<strong>לא נכון.</strong> התשובה הנכונה היא: <strong>${escapeHtml(card.correct_answer)}</strong>`
+                : `<strong>לא נכון.</strong> התשובה הנכונה היא: <div class="markdown-body" style="display:inline-block; vertical-align:top;">${renderMarkdown(card.correct_answer)}</div>`
               }
             </div>
           </div>
           <div style="text-align:right; margin-top:1rem;">
             <button class="btn btn-primary" id="btn-next-card">
-              ${currentIndex + 1 < totalכרטיסיות ? 'חזרה הבאה →' : 'המשך לסיכום →'}
+              ${currentIndex + 1 < totalכרטיסיות ? 'שאלה הבאה →' : (isCramMode ? 'סיים חרישה ✓' : 'המשך לסיכום →')}
             </button>
           </div>
         `;
 
         try {
-          await api(`/flashcards/${card.id}/review`, {
+          const res = await api(`/flashcards/${card.id}/review`, {
             method: 'POST',
-            body: JSON.stringify({ quality }),
+            body: JSON.stringify({ quality, user_id: currentUser ? currentUser.id : null }),
           });
+          if (res && res.user) {
+            currentUser = res.user;
+            localStorage.setItem('currentUser', JSON.stringify(currentUser));
+            updateNav();
+          }
         } catch (err) {}
 
         totalReviewed++;
@@ -557,7 +1287,7 @@
           </div>
         </div>
         <div class="summary-card" style="margin-top:2rem;">
-          <div class="summary-text" style="font-size: 1.1rem; line-height: 1.7; white-space: pre-wrap;">${escapeHtml(summaryText)}</div>
+          <div class="summary-text markdown-body" style="font-size: 1.1rem; line-height: 1.7;" dir="rtl">${renderMarkdown(summaryText)}</div>
         </div>
         <div style="margin-top:2rem; text-align:right;">
           <button class="btn btn-primary btn-lg" id="btn-finish-summary">
@@ -613,13 +1343,13 @@
               <span>📖 ${escapeHtml(card.lecture_title || 'הרצאה חדשה')}</span>
               ${card.lecture_summary ? `<button class="btn btn-ghost btn-sm btn-show-summary" style="padding:0.2rem 0.5rem;">הצג סיכום</button>` : ''}
             </div>
-            <div class="question-text">${escapeHtml(card.question_text)}</div>
+            <div class="question-text markdown-body" dir="rtl" style="margin-bottom: 1.5rem;">${renderMarkdown(card.question_text)}</div>
             <ul class="options-list">
               ${options.map((opt, i) => `
                 <li>
                   <button class="option-btn" data-answer="${escapeHtml(opt)}" data-correct="${opt === card.correct_answer}">
                     <span class="option-key">${keys[i]}</span>
-                    <span>${escapeHtml(opt)}</span>
+                    <span class="option-content markdown-body" dir="rtl">${renderMarkdown(opt)}</span>
                   </button>
                 </li>
               `).join('')}
@@ -663,7 +1393,7 @@
             <div class="feedback-text">
               ${isCorrect
                 ? '<strong>נכון!</strong>'
-                : `<strong>לא נכון.</strong> התשובה הנכונה היא: <strong>${escapeHtml(card.correct_answer)}</strong>`
+                : `<strong>לא נכון.</strong> התשובה הנכונה היא: <div class="markdown-body" style="display:inline-block; vertical-align:top;">${renderMarkdown(card.correct_answer)}</div>`
               }
             </div>
           </div>
@@ -677,10 +1407,15 @@
         // Record the initial attempt via SM-2
         try {
           if (card.id) {
-            await api(`/flashcards/${card.id}/review`, {
+            const res = await api(`/flashcards/${card.id}/review`, {
               method: 'POST',
-              body: JSON.stringify({ quality }),
+              body: JSON.stringify({ quality, user_id: currentUser ? currentUser.id : null }),
             });
+            if (res && res.user) {
+              currentUser = res.user;
+              localStorage.setItem('currentUser', JSON.stringify(currentUser));
+              updateNav();
+            }
           }
         } catch (err) {}
 
@@ -713,17 +1448,55 @@
       uploadBtn.disabled = !(titleInput.value.trim() && selectedFile);
     }
 
+    function validatePageRange(rangeStr, maxPages) {
+      if (!rangeStr) return true;
+      const parts = rangeStr.split(',');
+      for (const part of parts) {
+        const range = part.trim().split('-');
+        if (range.length === 1) {
+          const num = parseInt(range[0], 10);
+          if (isNaN(num) || num < 1 || num > maxPages) return false;
+        } else if (range.length === 2) {
+          const start = parseInt(range[0], 10);
+          const end = parseInt(range[1], 10);
+          if (isNaN(start) || isNaN(end) || start < 1 || end > maxPages || start > end) return false;
+        } else {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    async function handleFile(file) {
+      selectedFile = file;
+      if (!titleInput.value.trim()) {
+        titleInput.value = file.name.replace(/\.[^/.]+$/, "");
+      }
+      fileDisplay.style.display = 'block';
+      fileDisplay.innerHTML = `📎 <strong>${escapeHtml(file.name)}</strong> (${(file.size / 1024).toFixed(0)} KB) <span class="spinner" style="display:inline-block;width:12px;height:12px;border-width:2px;margin-right:8px;"></span>`;
+      zone.style.borderColor = 'var(--success)';
+      zone.style.background = 'rgba(16,185,129,0.04)';
+      
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer);
+        const pageCount = pdfDoc.getPageCount();
+        pagesInput.placeholder = `למשל: 1-${pageCount}`;
+        pagesInput.dataset.maxPages = pageCount;
+        fileDisplay.innerHTML = `📎 <strong>${escapeHtml(file.name)}</strong> (${(file.size / 1024).toFixed(0)} KB) - ${pageCount} עמודים`;
+      } catch (err) {
+        console.error("Failed to parse PDF pages", err);
+        fileDisplay.innerHTML = `📎 <strong>${escapeHtml(file.name)}</strong> (${(file.size / 1024).toFixed(0)} KB)`;
+      }
+      checkReady();
+    }
+
     zone.addEventListener('click', () => fileInput.click());
 
     fileInput.addEventListener('change', () => {
       if (fileInput.files.length > 0) {
-        selectedFile = fileInput.files[0];
-        fileDisplay.style.display = 'block';
-        fileDisplay.innerHTML = `📎 <strong>${escapeHtml(selectedFile.name)}</strong> (${(selectedFile.size / 1024).toFixed(0)} KB)`;
-        zone.style.borderColor = 'var(--success)';
-        zone.style.background = 'rgba(16,185,129,0.04)';
+        handleFile(fileInput.files[0]);
       }
-      checkReady();
     });
 
     titleInput.addEventListener('input', checkReady);
@@ -738,25 +1511,33 @@
       zone.classList.remove('drag-over');
       const file = e.dataTransfer.files[0];
       if (file && file.type === 'application/pdf') {
-        selectedFile = file;
-        fileDisplay.style.display = 'block';
-        fileDisplay.innerHTML = `📎 <strong>${escapeHtml(file.name)}</strong> (${(file.size / 1024).toFixed(0)} KB)`;
-        zone.style.borderColor = 'var(--success)';
-        zone.style.background = 'rgba(16,185,129,0.04)';
+        handleFile(file);
       } else {
         toast('מתקבלים קבצי PDF בלבד', 'error');
       }
-      checkReady();
     });
 
-    uploadBtn.addEventListener('click', () => {
+    uploadBtn.addEventListener('click', async () => {
       if (!selectedFile || !titleInput.value.trim()) return;
+      if (pagesInput && pagesInput.value.trim() && pagesInput.dataset.maxPages) {
+        const maxPages = parseInt(pagesInput.dataset.maxPages, 10);
+        if (!validatePageRange(pagesInput.value.trim(), maxPages)) {
+          return toast(`טווח העמודים אינו תקין. הקובץ מכיל ${maxPages} עמודים.`, 'error');
+        }
+      }
+
+      const share = await confirmModal("האם ברצונך לשתף סיכום זה עם הקהילה?\n(הסיכום יוצג תחת 'קהילה' רק לסטודנטים במסלול שלך)");
+
       const formData = new FormData();
       formData.append('title', titleInput.value.trim());
       if (pagesInput && pagesInput.value.trim()) {
         formData.append('pageRange', pagesInput.value.trim());
       }
       formData.append('pdf', selectedFile);
+      formData.append('author_user_id', currentUser.id);
+      if (share) {
+        formData.append('is_public', '1');
+      }
       startLearningSequence(courseId, formData);
     });
   }

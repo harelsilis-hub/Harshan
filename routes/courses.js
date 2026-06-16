@@ -2,8 +2,10 @@ const express = require('express');
 const router = express.Router();
 const { queryAll, queryOne, execute } = require('../db/schema');
 
-// GET /api/courses — list all courses with stats
+// GET /api/courses — list all courses with stats (optionally filter by semester_id)
 router.get('/', (req, res) => {
+  const { semester_id } = req.query;
+  const filterClause = semester_id ? `WHERE c.semester_id = ${parseInt(semester_id, 10)}` : '';
   const courses = queryAll(`
     SELECT c.*,
       (SELECT COUNT(*) FROM lectures  WHERE course_id = c.id) AS lecture_count,
@@ -12,6 +14,7 @@ router.get('/', (req, res) => {
          WHERE course_id = c.id
            AND next_review_date <= datetime('now')) AS due_count
     FROM courses c
+    ${filterClause}
     ORDER BY c.created_at DESC
   `);
   res.json(courses);
@@ -36,11 +39,14 @@ router.get('/:id', (req, res) => {
 
 // POST /api/courses — create course
 router.post('/', (req, res) => {
-  const { name } = req.body;
+  const { name, semester_id } = req.body;
   if (!name || !name.trim()) {
     return res.status(400).json({ error: 'Course name is required' });
   }
-  const { lastId } = execute('INSERT INTO courses (name) VALUES (?)', [name.trim()]);
+  if (!semester_id) {
+    return res.status(400).json({ error: 'semester_id is required' });
+  }
+  const { lastId } = execute('INSERT INTO courses (name, semester_id) VALUES (?, ?)', [name.trim(), semester_id]);
   const course = queryOne('SELECT * FROM courses WHERE id = ?', [lastId]);
   res.status(201).json(course);
 });

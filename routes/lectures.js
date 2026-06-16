@@ -73,7 +73,7 @@ function parsePageRange(rangeStr) {
 router.post('/courses/:courseId/lectures', upload.single('pdf'), async (req, res) => {
   try {
     const { courseId } = req.params;
-    const { title, pageRange } = req.body;
+    const { title, pageRange, author_user_id } = req.body;
 
     if (!title || !title.trim()) {
       return res.status(400).json({ error: 'Lecture title is required' });
@@ -127,7 +127,7 @@ router.post('/courses/:courseId/lectures', upload.single('pdf'), async (req, res
         'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=AQ.Ab8RN6JFY07YNeS8_hDWiPvr-yvtJtpMyxCxUjMceiEq8nSz-Q',
         {
           systemInstruction: {
-            parts: [{ text: 'You are an expert educational AI. Extract key concepts from the text. Respond ONLY with a valid JSON object. The object must have a "summary" (string, a comprehensive, highly detailed summary covering all crucial sections, concepts, and formulas of the lecture, formatted nicely with bullet points and paragraphs where appropriate) and "flashcards" (array of objects). Each flashcard object must have: "question_text" (string), "correct_answer" (string), and "distractors" (array of 3 strings). ALL CONTENT MUST BE IN HEBREW.' }]
+            parts: [{ text: 'You are an expert educational AI. Extract key concepts from the text. Respond ONLY with a valid JSON object. The object must have a "summary" (string, a comprehensive, highly detailed summary covering all crucial sections, concepts, and formulas of the lecture, formatted nicely with bullet points and paragraphs where appropriate) and "flashcards" (array of objects). Each flashcard object must have: "question_text" (string), "correct_answer" (string), and "distractors" (array of 3 strings). ALL CONTENT MUST BE IN HEBREW. CRITICAL: Any mathematical formula, operator, inequality, English variable, or inner product MUST be formatted strictly in LaTeX enclosed in single dollar signs (e.g., $A*A = I$). Do not use plain text for math. EXTREMELY IMPORTANT: Because you are responding in JSON, you MUST double-escape all backslashes in your LaTeX strings (e.g., use \\\\langle instead of \\langle, and \\\\ge instead of \\ge) so that JSON.parse() does not crash!' }]
           },
           contents: [
             {
@@ -165,9 +165,10 @@ router.post('/courses/:courseId/lectures', upload.single('pdf'), async (req, res
     }
 
     /* ── Save lecture ──────────────────────────────────── */
+    const isPublicInt = req.body.is_public === '1' ? 1 : 0;
     const { lastId: lectureId } = execute(
-      'INSERT INTO lectures (course_id, title, summary_content) VALUES (?, ?, ?)',
-      [courseId, title.trim(), summary]
+      'INSERT INTO lectures (course_id, title, summary_content, author_user_id, is_public) VALUES (?, ?, ?, ?, ?)',
+      [courseId, title.trim(), summary, author_user_id ? parseInt(author_user_id, 10) : null, isPublicInt]
     );
 
     /* ── Save flashcards (Due tomorrow) ────────────────── */
@@ -177,9 +178,9 @@ router.post('/courses/:courseId/lectures', upload.single('pdf'), async (req, res
 
     for (const c of flashcards) {
       const { lastId: cardId } = execute(
-        `INSERT INTO flashcards (course_id, lecture_id, question_text, correct_answer, distractors, next_review_date)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [courseId, lectureId, c.question_text, c.correct_answer, JSON.stringify(c.distractors), nextStr]
+        `INSERT INTO flashcards (course_id, lecture_id, question_text, correct_answer, distractors, next_review_date, author_user_id, is_public)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [courseId, lectureId, c.question_text, c.correct_answer, JSON.stringify(c.distractors), nextStr, author_user_id ? parseInt(author_user_id, 10) : null, isPublicInt]
       );
       c.id = cardId; // Attach the ID so frontend can potentially update it if it wants
       c.lecture_title = title.trim(); // Add lecture title for the frontend quiz UI
@@ -187,7 +188,21 @@ router.post('/courses/:courseId/lectures', upload.single('pdf'), async (req, res
     }
 
     const lecture = queryOne('SELECT * FROM lectures WHERE id = ?', [lectureId]);
-    res.status(201).json({ lecture, flashcards_generated: flashcards.length, new_flashcards: flashcards });
+
+    let updatedUser = null;
+    if (author_user_id) {
+      const uId = parseInt(author_user_id, 10);
+      const user = queryOne('SELECT * FROM users WHERE id = ?', [uId]);
+      if (user) {
+        let { xp, level } = user;
+        xp += 50;
+        level = Math.floor(Math.sqrt(xp / 50)) + 1;
+        execute('UPDATE users SET xp = ?, level = ? WHERE id = ?', [xp, level, uId]);
+        updatedUser = queryOne('SELECT * FROM users WHERE id = ?', [uId]);
+      }
+    }
+
+    res.status(201).json({ lecture, flashcards_generated: flashcards.length, new_flashcards: flashcards, user: updatedUser });
   } catch (err) {
     console.error('Lecture upload error:', err);
     res.status(500).json({ error: err.message });
@@ -201,6 +216,54 @@ router.delete('/lectures/:id', (req, res) => {
   if (changes === 0) {
     return res.status(404).json({ error: 'Lecture not found' });
   }
+  res.json({ success: true });
+});
+
+/* ── GET community lectures ──────────────────────────────────────── */
+router.get('/community/lectures', (req, res) => {
+  const { university, year, semester } = req.query;
+  if (!university || !year || !semester) {
+    return res.status(400).json({ error: 'Cohort info required' });
+  }
+
+  const lectures = queryAll(`
+    SELECT l.*, c.name AS course_name, u.username AS author_name,
+      (SELECT COUNT(*) FROM flashcards WHERE lecture_id = l.id) AS flashcard_count
+    FROM lectures l
+    JOIN users u ON l.author_user_id = u.id
+    JOIN courses c ON l.course_id = c.id
+    WHERE l.is_public = 1 
+      AND u.university = ? 
+      AND u.year = ? 
+      AND u.semester = ?
+    ORDER BY l.likes DESC, l.created_at DESC
+  `, [university, parseInt(year, 10), parseInt(semester, 10)]);
+
+  res.json(lectures);
+});
+
+/* ── POST share lecture ──────────────────────────────────── */
+router.post('/lectures/:id/share', (req, res) => {
+  const { is_public } = req.body;
+  const { changes } = execute('UPDATE lectures SET is_public = ? WHERE id = ?', [is_public ? 1 : 0, req.params.id]);
+  if (changes === 0) return res.status(404).json({ error: 'Lecture not found' });
+  
+  execute('UPDATE flashcards SET is_public = ? WHERE lecture_id = ?', [is_public ? 1 : 0, req.params.id]);
+  
+  res.json({ success: true, is_public: !!is_public });
+});
+
+/* ── POST like lecture ───────────────────────────────────── */
+router.post('/lectures/:id/like', (req, res) => {
+  const lecture = queryOne('SELECT * FROM lectures WHERE id = ?', [req.params.id]);
+  if (!lecture) return res.status(404).json({ error: 'Lecture not found' });
+  
+  execute('UPDATE lectures SET likes = likes + 1 WHERE id = ?', [req.params.id]);
+  
+  if (lecture.author_user_id) {
+    execute('UPDATE users SET reputation = reputation + 10 WHERE id = ?', [lecture.author_user_id]);
+  }
+  
   res.json({ success: true });
 });
 

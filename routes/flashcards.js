@@ -27,9 +27,21 @@ router.get('/courses/:courseId/flashcards', (req, res) => {
   res.json(cards);
 });
 
-// POST /api/flashcards/:id/review — SM-2 mutation
+// GET /api/courses/:courseId/cram — top 20 hardest flashcards
+router.get('/courses/:courseId/cram', (req, res) => {
+  const cards = queryAll(`
+    SELECT f.*, l.title AS lecture_title, l.summary_content AS lecture_summary
+    FROM flashcards f
+    JOIN lectures l ON f.lecture_id = l.id
+    WHERE f.course_id = ?
+    ORDER BY f.easiness_factor ASC, f.interval ASC
+    LIMIT 20
+  `, [req.params.courseId]);
+  res.json(cards);
+});
+
 router.post('/flashcards/:id/review', (req, res) => {
-  const { quality } = req.body;
+  const { quality, user_id } = req.body;
   if (quality === undefined || quality < 0 || quality > 5) {
     return res.status(400).json({ error: 'Quality score must be between 0 and 5' });
   }
@@ -69,8 +81,50 @@ router.post('/flashcards/:id/review', (req, res) => {
     WHERE id = ?
   `, [easiness_factor, interval, repetitions, nextStr, req.params.id]);
 
+  let updatedUser = null;
+  if (user_id) {
+    const user = queryOne('SELECT * FROM users WHERE id = ?', [user_id]);
+    if (user) {
+      const today = new Date().toISOString().split('T')[0];
+      let { xp, level, current_streak, last_review_date, streak_freezes } = user;
+      
+      xp += 5;
+      level = Math.floor(Math.sqrt(xp / 50)) + 1;
+
+      if (last_review_date !== today) {
+        if (!last_review_date) {
+          current_streak = 1;
+        } else {
+          const lastDate = new Date(last_review_date);
+          const currentDate = new Date(today);
+          const diffDays = Math.floor((currentDate - lastDate) / (1000 * 60 * 60 * 24));
+          
+          if (diffDays === 1) {
+            current_streak += 1;
+          } else if (diffDays > 1) {
+            if (streak_freezes > 0) {
+              streak_freezes -= 1;
+              current_streak += 1;
+            } else {
+              current_streak = 1;
+            }
+          }
+        }
+        last_review_date = today;
+      }
+      
+      execute(`
+        UPDATE users 
+        SET xp = ?, level = ?, current_streak = ?, last_review_date = ?, streak_freezes = ?
+        WHERE id = ?
+      `, [xp, level, current_streak, last_review_date, streak_freezes, user_id]);
+      
+      updatedUser = queryOne('SELECT * FROM users WHERE id = ?', [user_id]);
+    }
+  }
+
   const updated = queryOne('SELECT * FROM flashcards WHERE id = ?', [req.params.id]);
-  res.json(updated);
+  res.json({ card: updated, user: updatedUser });
 });
 
 module.exports = router;

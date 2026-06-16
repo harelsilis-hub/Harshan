@@ -24,9 +24,13 @@ getDb().then(() => {
   console.log('✅ Database initialized');
 
   // Routes
+  app.use('/api/auth', require('./routes/auth'));
+  app.use('/api/semesters', require('./routes/semesters'));
   app.use('/api/courses', require('./routes/courses'));
+  app.use('/api/calendar', require('./routes/calendar'));
   app.use('/api', require('./routes/flashcards'));
   app.use('/api', require('./routes/lectures'));
+  app.use('/api', require('./routes/gamification'));
 
   // SPA fallback
   app.get('*', (req, res) => {
