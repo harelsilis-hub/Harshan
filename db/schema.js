@@ -6,6 +6,7 @@ const dbDir = path.join(__dirname, '../data');
 const dbPath = path.join(dbDir, 'harshan.sqlite');
 
 let db;
+let inTransaction = false;
 
 async function getDb() {
   if (db) return db;
@@ -82,6 +83,8 @@ async function getDb() {
         easiness_factor REAL DEFAULT 2.5,
         interval INTEGER DEFAULT 0,
         repetitions INTEGER DEFAULT 0,
+        appearance_index INTEGER,
+        learning_status TEXT DEFAULT 'pending',
         author_user_id INTEGER,
         is_public INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -109,7 +112,7 @@ async function getDb() {
 }
 
 function saveDb() {
-  if (!db) return;
+  if (!db || inTransaction) return;
   const data = db.export();
   fs.writeFileSync(dbPath, Buffer.from(data));
 }
@@ -154,9 +157,26 @@ function execute(sql, params = []) {
   return { lastId: lastInsertRowid, changes };
 }
 
+function runTransaction(callback) {
+  if (!db) throw new Error('Database not initialized');
+  db.run('BEGIN TRANSACTION');
+  inTransaction = true;
+  try {
+    callback();
+    db.run('COMMIT');
+  } catch (err) {
+    db.run('ROLLBACK');
+    throw err;
+  } finally {
+    inTransaction = false;
+    saveDb();
+  }
+}
+
 module.exports = {
   getDb,
   queryAll,
   queryOne,
-  execute
+  execute,
+  runTransaction
 };
