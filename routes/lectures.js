@@ -85,30 +85,30 @@ router.post('/courses/:courseId/lectures', upload.single('pdf'), async (req, res
     if (req.file) {
       const pdfParse = require('pdf-parse');
       const buf = fs.readFileSync(req.file.path);
-      
+
       const targetPages = parsePageRange(pageRange);
       let options = {};
-      
+
       if (targetPages) {
-        options.pagerender = function(pageData) {
+        options.pagerender = function (pageData) {
           if (!targetPages.has(pageData.pageIndex + 1)) {
             return '';
           }
-          return pageData.getTextContent().then(function(textContent) {
-              let lastY, text = '';
-              for (let item of textContent.items) {
-                  if (lastY == item.transform[5] || !lastY){
-                      text += item.str;
-                  } else {
-                      text += '\n' + item.str;
-                  }    
-                  lastY = item.transform[5];
+          return pageData.getTextContent().then(function (textContent) {
+            let lastY, text = '';
+            for (let item of textContent.items) {
+              if (lastY == item.transform[5] || !lastY) {
+                text += item.str;
+              } else {
+                text += '\n' + item.str;
               }
-              return text;
+              lastY = item.transform[5];
+            }
+            return text;
           });
         };
       }
-      
+
       const pdfData = await pdfParse(buf, options);
       textContent = pdfData.text;
     } else {
@@ -138,25 +138,31 @@ router.post('/courses/:courseId/lectures', upload.single('pdf'), async (req, res
           'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=AQ.Ab8RN6JFY07YNeS8_hDWiPvr-yvtJtpMyxCxUjMceiEq8nSz-Q',
           {
             systemInstruction: {
-              parts: [{ text: `Act as a meticulous Academic Data Extractor for a Spaced Repetition System.
-Your task is to exhaustively process the provided academic text and extract EVERY SINGLE concept, definition, theorem, lemma, corollary, and significant exercise into individual flashcards.
+              parts: [{
+                text: `Act as a strict Mathematical Data Extractor. Your task is to extract concepts VERBATIM from the text into a summary block AND individual flashcards.
 
 ABSOLUTE RULES:
-1. ZERO SUMMARIZATION: Do not compress the text. If the document contains 15 definitions and 10 theorems, you MUST output at least 25 flashcards.
-2. EXHAUSTIVE PARSING: Comb through the text paragraph by paragraph. You must extract anything explicitly labeled as "הגדרה" (Definition), "משפט" (Theorem), "טענה" (Claim), "מסקנה" (Corollary), or "דוגמה" (Example).
-3. MATH FORMATTING (CRITICAL): Every mathematical symbol, equation, operator, matrix, or English variable MUST be written in strict LaTeX wrapped in single dollar signs (e.g., $A^* A = I$, $\\langle v, w \\rangle \\ge 0$). Never use plain text for math. EXTREMELY IMPORTANT: Because you are responding in JSON, you MUST double-escape all backslashes in your LaTeX strings (e.g., use \\\\\\\\langle instead of \\\\langle, and \\\\\\\\ge instead of \\\\ge) so that JSON.parse() does not crash!
-4. LANGUAGE: The flashcard content (front and back) must be entirely in Hebrew, exactly preserving the academic terminology used in the source text.
-5. CHRONOLOGICAL ORDER: Assign a strictly incremental appearance_index starting from 1 for each chunk, maintaining the exact order the concepts appeared in the text.
+1. EXHAUSTIVE EXTRACTION: You MUST extract EVERY single "הגדרה" (Definition), "משפט" (Theorem), "טענה" (Claim), "טענונת" (Minor Claim), and "מסקנה" (Corollary).
+2. NO SUMMARIZATION: You must copy the text word-for-word exactly as it appears.
+3. IGNORE PROOFS & EXAMPLES: Skip "הוכחה" and "דוגמה".
+4. MATH FORMATTING: Write standard LaTeX without extra escaping (e.g., \\alpha, \\frac{}{}, \\langle v, w \\rangle). Wrap inline math in $ and block equations in $$.
+5. HEBREW: Content must be in Hebrew.
+6. MULTIPLE CHOICE: For every flashcard, generate exactly 3 plausible but incorrect distractors in the 'distractors' array.
 
-OUTPUT FORMAT:
-Return ONLY a valid JSON object with the exact following structure. Do not include markdown formatting like \`\`\`json.
+OUTPUT FORMAT (Strict JSON):
+Return ONLY a valid JSON object.
 
 {
-  "chunk_summary": "צור סיכום תמציתי ומדויק שמאגד אך ורק את כל ההגדרות, המשפטים, והטענות המרכזיות. סנן הסברים ארוכים, דוגמאות וטקסט מעבר, אבל אל תשמיט שום עובדה מתמטית או הגדרה. השתמש בפורמט LaTeX לנוסחאות.",
+  "chunk_summary": "DO NOT SUMMARIZE. Extract each item verbatim in clear Markdown format. Use headers (e.g. ### הגדרה) or blockquotes for each item instead of technical tags like [START VERBATIM BLOCK].",
   "flashcards": [
     {
-      "front": "Question or concept identifier (e.g., 'מהי ההגדרה של אופרטור נורמלי?')",
-      "back": "Full and exact definition/theorem statement with LaTeX",
+      "front": "Question identifying the concept (e.g., 'מהי ההגדרה של מר חב מכפלה פנימית?')",
+      "back": "VERBATIM copy of the text with standard LaTeX math formatting.",
+      "distractors": [
+        "Plausible incorrect mathematical definition 1",
+        "Plausible incorrect mathematical definition 2",
+        "Plausible incorrect mathematical definition 3"
+      ],
       "appearance_index": 1
     }
   ]
@@ -180,14 +186,44 @@ Return ONLY a valid JSON object with the exact following structure. Do not inclu
             headers: {
               'Content-Type': 'application/json'
             },
-            timeout: 60000
+            timeout: 180000
           }
         );
 
         let aiContent = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (typeof aiContent === 'string') {
           aiContent = aiContent.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
-          return JSON.parse(aiContent);
+          try {
+            return JSON.parse(aiContent);
+          } catch (parseErr) {
+            console.log('JSON parse failed, attempting to fix LaTeX escaping...', parseErr.message);
+
+            // 1. Escape any single backslash that isn't followed by a valid JSON escape char
+            // We use lookbehind (?<!\\) to ensure we don't match a backslash that is already escaped
+            let fixed = aiContent.replace(/(?<!\\)\\(?!["\\/bfnrtu])/g, '\\\\');
+
+            // 2. Escape \u if it is NOT followed by 4 hex digits (e.g. \underbrace)
+            fixed = fixed.replace(/(?<!\\)\\u(?![0-9a-fA-F]{4})/g, '\\\\u');
+
+            // 3. Escape common LaTeX macros that happen to start with valid JSON escape characters
+            const latexWords = [
+              'frac', 'forall', 'frown',
+              'nabla', 'neq', 'nu', 'notin', 'nexists', 'nrightarrow', 'nsubseteq', 'nsupseteq', 'normal',
+              'rightarrow', 'rho', 'rangle', 'right',
+              'text', 'theta', 'times', 'triangle', 'tau', 'tilde', 'to', 'top',
+              'begin', 'beta', 'bmod', 'bar', 'bigcup', 'bigcap', 'bot', 'bullet', 'bf', 'bb'
+            ];
+            for (const word of latexWords) {
+              const regex = new RegExp(`(?<!\\\\)\\\\${word}`, 'g');
+              fixed = fixed.replace(regex, `\\\\\\\\${word}`);
+            }
+
+            // 4. Sometimes LLMs output unescaped actual newlines (ASCII 10) inside string values
+            // We can replace them with \n, but only inside quotes. This is complex, so let's skip for now
+            // as the lookbehinds usually fix the primary math problems.
+
+            return JSON.parse(fixed);
+          }
         } else {
           throw new Error('Unexpected AI response format');
         }
@@ -243,6 +279,8 @@ Return ONLY a valid JSON object with the exact following structure. Do not inclu
           [courseId, lectureId, appearance_index, learning_status, c.front || c.question_text || '', c.back || c.correct_answer || '', JSON.stringify(c.distractors || []), nextStr, author_user_id ? parseInt(author_user_id, 10) : null, isPublicInt]
         );
         c.id = resCard.lastId;
+        c.question_text = c.front || c.question_text || '';
+        c.correct_answer = c.back || c.correct_answer || '';
         c.appearance_index = appearance_index;
         c.learning_status = learning_status;
         c.lecture_title = title.trim();
@@ -309,9 +347,9 @@ router.post('/lectures/:id/share', (req, res) => {
   const { is_public } = req.body;
   const { changes } = execute('UPDATE lectures SET is_public = ? WHERE id = ?', [is_public ? 1 : 0, req.params.id]);
   if (changes === 0) return res.status(404).json({ error: 'Lecture not found' });
-  
+
   execute('UPDATE flashcards SET is_public = ? WHERE lecture_id = ?', [is_public ? 1 : 0, req.params.id]);
-  
+
   res.json({ success: true, is_public: !!is_public });
 });
 
@@ -319,13 +357,13 @@ router.post('/lectures/:id/share', (req, res) => {
 router.post('/lectures/:id/like', (req, res) => {
   const lecture = queryOne('SELECT * FROM lectures WHERE id = ?', [req.params.id]);
   if (!lecture) return res.status(404).json({ error: 'Lecture not found' });
-  
+
   execute('UPDATE lectures SET likes = likes + 1 WHERE id = ?', [req.params.id]);
-  
+
   if (lecture.author_user_id) {
     execute('UPDATE users SET reputation = reputation + 10 WHERE id = ?', [lecture.author_user_id]);
   }
-  
+
   res.json({ success: true });
 });
 
