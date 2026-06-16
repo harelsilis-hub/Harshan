@@ -126,8 +126,14 @@ Source Material:
 ${combinedSummary}
 `;
 
+    const apiKeys = [
+      'AQ.Ab8RN6JFY07YNeS8_hDWiPvr-yvtJtpMyxCxUjMceiEq8nSz-Q',
+      'AQ.Ab8RN6L2_czYom9mbd3TzQpS8BBPBQYRt87X-ZTJq9lXvm5oLg'
+    ];
+    const randomKey = apiKeys[Math.floor(Math.random() * apiKeys.length)];
+
     const response = await axios.post(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=AQ.Ab8RN6JFY07YNeS8_hDWiPvr-yvtJtpMyxCxUjMceiEq8nSz-Q',
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${randomKey}`,
       {
         contents: [{ role: 'user', parts: [{ text: promptText }] }],
         generationConfig: {
