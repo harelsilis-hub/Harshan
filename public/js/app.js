@@ -1066,9 +1066,8 @@
       semester: currentUser.semester
     });
 
-    const [lectures, calendarEvents, leaderboard] = await Promise.all([
+    const [lectures, leaderboard] = await Promise.all([
       api(`/community/lectures?${params.toString()}`),
-      api(`/calendar?${params.toString()}`),
       api(`/leaderboard?${params.toString()}`)
     ]);
 
@@ -1122,26 +1121,6 @@
           })()}
         </div>
 
-        <!-- Shared Calendar -->
-        <div style="flex:1; min-width:300px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border); padding-bottom:0.5rem; margin-bottom:1rem;">
-            <h2 style="margin:0;">📅 לוח מבחנים והגשות</h2>
-            <button class="btn btn-sm btn-primary" id="btn-add-event">+ הוסף אירוע</button>
-          </div>
-          ${calendarEvents.length === 0 ? '<div class="empty-state">אין אירועים בלוח השנה.</div>' : ''}
-          <div class="calendar-list">
-            ${calendarEvents.map(e => {
-              const dateObj = new Date(e.event_date);
-              const formattedDate = dateObj.toLocaleDateString('he-IL');
-              const isPast = dateObj < new Date();
-              return `
-              <div class="card" style="padding:1rem; margin-bottom:1rem; border-right: 4px solid ${isPast ? 'var(--text-secondary)' : 'var(--primary)'}; opacity: ${isPast ? '0.6' : '1'};">
-                <div style="font-weight:600; font-size:1.1rem;">${escapeHtml(e.title)}</div>
-                <div style="color:var(--text-secondary); font-size:0.9rem; margin-top:0.25rem;">תאריך: ${formattedDate}</div>
-              </div>
-            `}).join('')}
-          </div>
-        </div>
 
         <!-- Leaderboard -->
         <div style="flex:1; min-width:300px;">

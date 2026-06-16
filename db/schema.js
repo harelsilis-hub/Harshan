@@ -87,6 +87,8 @@ async function getDb() {
         learning_status TEXT DEFAULT 'pending',
         author_user_id INTEGER,
         is_public INTEGER DEFAULT 0,
+        learning_status TEXT DEFAULT 'pending',
+        appearance_index INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (course_id) REFERENCES courses(id),
         FOREIGN KEY (lecture_id) REFERENCES lectures(id),
