@@ -114,7 +114,7 @@ Do NOT just repeat definitions verbatim. Ask conceptual questions, or ask the st
 ABSOLUTE RULES:
 1. MATH FORMATTING: Write standard LaTeX without extra escaping (e.g., \\alpha, \\frac{}{}, \\langle v, w \\rangle). Wrap inline math in $ and block equations in $$.
 2. HEBREW: Content must be in Hebrew.
-3. DISTRACTORS: For every question, generate exactly 3 mathematically plausible but incorrect distractors.
+3. DISTRACTORS: For every question, generate exactly 3 mathematically plausible but incorrect distractors. CRITICAL: The distractors MUST be similar in length, structure, and complexity to the correct answer. Do not make the correct answer obviously longer or more detailed than the distractors.
 
 OUTPUT FORMAT (Strict JSON):
 Return ONLY a valid JSON array of objects.

@@ -156,7 +156,7 @@ ABSOLUTE RULES:
 3. IGNORE PROOFS & EXAMPLES: Skip "הוכחה" and "דוגמה".
 4. MATH FORMATTING: Write standard LaTeX without extra escaping (e.g., \\alpha, \\frac{}{}, \\langle v, w \\rangle). Wrap inline math in $ and block equations in $$.
 5. HEBREW: Content must be in Hebrew.
-6. MULTIPLE CHOICE: For every flashcard, generate exactly 3 plausible but incorrect distractors in the 'distractors' array.
+6. MULTIPLE CHOICE: For every flashcard, generate exactly 3 plausible but incorrect distractors in the 'distractors' array. CRITICAL: The distractors MUST be similar in length, detail, and complexity to the correct answer so it is not easy to guess. Do not make the correct answer obviously longer than the others.
 7. 100% PARITY: Simultaneously, you must take every single definition, theorem, and claim presented in the summary you just generated, and convert them directly into the flashcards array. Ensure absolute parity: 100% of the concepts displayed in the summary must be formatted into distinct flashcards, without skipping a single one.
 
 OUTPUT FORMAT (Strict JSON):
