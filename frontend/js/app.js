@@ -235,80 +235,157 @@
           <div class="auth-header">
             <div class="auth-icon">🧠</div>
             <h2>ברוך הבא!</h2>
-            <p>התחבר לחשבון שלך באמצעות גוגל כדי להמשיך ללמוד</p>
+            <p id="auth-subtitle">התחבר לחשבון שלך כדי להמשיך ללמוד</p>
           </div>
           
-          <div id="google-btn-container" style="display:flex; justify-content:center; margin-top: 2rem;">
-             <!-- Google Sign In Button will render here -->
+          <!-- Login View -->
+          <div id="login-view">
+            <div id="google-btn-login-container" style="display:flex; justify-content:center; margin-top: 1rem;"></div>
+            
+            <div class="divider" style="margin: 1.5rem 0; text-align: center; color: var(--text-secondary); font-size: 0.9rem; position: relative;">
+               <span style="background: var(--bg-card); padding: 0 10px; position: relative; z-index: 1;">או באמצעות אימייל</span>
+               <hr style="position: absolute; top: 50%; left: 0; right: 0; margin: 0; border: none; border-top: 1px solid var(--border); z-index: 0;">
+            </div>
+
+            <form id="email-login-form" class="auth-form">
+              <div class="form-group">
+                <label>אימייל</label>
+                <input class="input" id="login-email" type="email" required>
+              </div>
+              <div class="form-group" style="margin-top: 1rem;">
+                <label>סיסמה</label>
+                <input class="input" id="login-password" type="password" required>
+              </div>
+              <button type="submit" class="btn btn-primary auth-submit-btn" style="margin-top: 1.5rem;">התחברות</button>
+            </form>
+            <div style="text-align: center; margin-top: 1rem; font-size: 0.9rem;">
+              <a href="#" id="link-to-register" style="color: var(--primary); text-decoration: none;">אין לך חשבון? הירשם כאן</a>
+            </div>
           </div>
 
-          <form id="profile-form" class="auth-form slide-in" style="display: none; margin-top: 2rem;">
-            <hr style="margin-bottom: 1.5rem; border-top: 1px solid var(--border);">
-            <h3 style="text-align: center; margin-bottom: 1.5rem; color: var(--text);">השלמת הרשמה</h3>
+          <!-- Register View -->
+          <div id="register-view" style="display: none;">
+            <div id="google-btn-register-container" style="display:flex; justify-content:center; margin-top: 1rem;"></div>
             
-            <div class="form-group slide-in">
-              <label>אוניברסיטה / מוסד לימודים</label>
-              <input class="input" id="auth-university" list="universities-list" placeholder="בחר או הקלד מוסד לימודים..." required>
-              <datalist id="universities-list">
-                <option value="אוניברסיטת תל אביב">
-                <option value="האוניברסיטה העברית בירושלים">
-                <option value="הטכניון - מכון טכנולוגי לישראל">
-                <option value="אוניברסיטת בן-גוריון בנגב">
-                <option value="אוניברסיטת בר-אילן">
-                <option value="אוניברסיטת חיפה">
-                <option value="אוניברסיטת אריאל בשומרון">
-                <option value="מכון ויצמן למדע">
-                <option value="האוניברסיטה הפתוחה">
-                <option value="אוניברסיטת רייכמן">
-                <option value="המסלול האקדמי המכללה למינהל">
-                <option value="המכון הטכנולוגי חולון (HIT)">
-                <option value="המכללה האקדמית תל אביב יפו">
-                <option value="שנקר - הנדסה. עיצוב. אמנות">
-                <option value="המכללה האקדמית ספיר">
-                <option value="המכללה האקדמית עמק יזרעאל">
-                <option value="המכללה האקדמית תל-חי">
-                <option value="המכללה האקדמית אשקלון">
-                <option value="המכללה האקדמית סמי שמעון (SCE)">
-                <option value="המכללה האקדמית הדסה ירושלים">
-                <option value="המכללה האקדמית רופין">
-                <option value="המכללה האקדמית נתניה">
-                <option value="בצלאל אקדמיה לאמנות ועיצוב">
-              </datalist>
-            </div>
-            <div class="form-group slide-in" style="margin-top: 1.25rem;">
-              <label>שם מלא</label>
-              <input class="input" id="auth-leaderboard" type="text" placeholder="הכנס את שמך המלא" required>
-            </div>
-            <div class="form-row slide-in" style="margin-top: 1.25rem;">
-              <div class="form-group">
-                <label>שנת לימוד (1-7)</label>
-                <input class="input" id="auth-year" type="number" min="1" max="7" placeholder="1" required>
-              </div>
-              <div class="form-group">
-                <label>סמסטר (1-3)</label>
-                <input class="input" id="auth-semester" type="number" min="1" max="3" placeholder="1" required>
-              </div>
+            <div class="divider" style="margin: 1.5rem 0; text-align: center; color: var(--text-secondary); font-size: 0.9rem; position: relative;">
+               <span style="background: var(--bg-card); padding: 0 10px; position: relative; z-index: 1;">או הרשמה באימייל</span>
+               <hr style="position: absolute; top: 50%; left: 0; right: 0; margin: 0; border: none; border-top: 1px solid var(--border); z-index: 0;">
             </div>
 
-            <button type="submit" class="btn btn-primary auth-submit-btn" id="btn-submit-profile">
-              סיים הרשמה
-            </button>
-          </form>
+            <form id="email-register-form" class="auth-form">
+              <div class="form-group">
+                <label>אימייל</label>
+                <input class="input" id="reg-email" type="email" required>
+              </div>
+              <div class="form-group" style="margin-top: 1rem;">
+                <label>סיסמה</label>
+                <input class="input" id="reg-password" type="password" required minlength="6">
+              </div>
+              <div class="form-group" style="margin-top: 1rem;">
+                <label>שם מלא</label>
+                <input class="input" id="reg-name" type="text" required>
+              </div>
+              <div class="form-group" style="margin-top: 1rem;">
+                <label>אוניברסיטה / מוסד לימודים</label>
+                <input class="input" id="reg-university" list="universities-list" required>
+              </div>
+              <div class="form-row" style="margin-top: 1rem;">
+                <div class="form-group">
+                  <label>שנת לימוד (1-7)</label>
+                  <input class="input" id="reg-year" type="number" min="1" max="7" required>
+                </div>
+                <div class="form-group">
+                  <label>סמסטר (1-3)</label>
+                  <input class="input" id="reg-semester" type="number" min="1" max="3" required>
+                </div>
+              </div>
+              <button type="submit" class="btn btn-primary auth-submit-btn" style="margin-top: 1.5rem;">הרשמה</button>
+            </form>
+            <div style="text-align: center; margin-top: 1rem; font-size: 0.9rem;">
+              <a href="#" id="link-to-login" style="color: var(--primary); text-decoration: none;">כבר יש לך חשבון? התחבר כאן</a>
+            </div>
+          </div>
+
+          <!-- Google Profile Completion View -->
+          <div id="google-profile-view" style="display: none;">
+            <h3 style="text-align: center; margin-bottom: 1.5rem; color: var(--text);">השלמת פרטים מזהים</h3>
+            <form id="google-profile-form" class="auth-form">
+              <div class="form-group">
+                <label>שם מלא</label>
+                <input class="input" id="gp-name" type="text" required>
+              </div>
+              <div class="form-group" style="margin-top: 1rem;">
+                <label>אוניברסיטה / מוסד לימודים</label>
+                <input class="input" id="gp-university" list="universities-list" required>
+              </div>
+              <div class="form-row" style="margin-top: 1rem;">
+                <div class="form-group">
+                  <label>שנת לימוד (1-7)</label>
+                  <input class="input" id="gp-year" type="number" min="1" max="7" required>
+                </div>
+                <div class="form-group">
+                  <label>סמסטר (1-3)</label>
+                  <input class="input" id="gp-semester" type="number" min="1" max="3" required>
+                </div>
+              </div>
+              <button type="submit" class="btn btn-primary auth-submit-btn" id="btn-submit-gp" style="margin-top: 1.5rem;">סיום הרשמה</button>
+            </form>
+          </div>
+
+          <datalist id="universities-list">
+            <option value="אוניברסיטת תל אביב">
+            <option value="האוניברסיטה העברית בירושלים">
+            <option value="הטכניון - מכון טכנולוגי לישראל">
+            <option value="אוניברסיטת בן-גוריון בנגב">
+            <option value="אוניברסיטת בר-אילן">
+            <option value="אוניברסיטת חיפה">
+            <option value="אוניברסיטת אריאל בשומרון">
+            <option value="מכון ויצמן למדע">
+            <option value="האוניברסיטה הפתוחה">
+            <option value="אוניברסיטת רייכמן">
+            <option value="המסלול האקדמי המכללה למינהל">
+            <option value="המכון הטכנולוגי חולון (HIT)">
+            <option value="המכללה האקדמית תל אביב יפו">
+            <option value="שנקר - הנדסה. עיצוב. אמנות">
+            <option value="המכללה האקדמית ספיר">
+            <option value="המכללה האקדמית עמק יזרעאל">
+            <option value="המכללה האקדמית תל-חי">
+            <option value="המכללה האקדמית אשקלון">
+            <option value="המכללה האקדמית סמי שמעון (SCE)">
+            <option value="המכללה האקדמית הדסה ירושלים">
+            <option value="המכללה האקדמית רופין">
+            <option value="המכללה האקדמית נתניה">
+            <option value="בצלאל אקדמיה לאמנות ועיצוב">
+          </datalist>
+
         </div>
       </div>
     `;
 
-    // Wait a brief moment to ensure Google script is loaded, then initialize
+    // View Toggles
+    document.getElementById('link-to-register').addEventListener('click', (e) => {
+      e.preventDefault();
+      document.getElementById('login-view').style.display = 'none';
+      document.getElementById('register-view').style.display = 'block';
+      document.getElementById('auth-subtitle').textContent = 'צור משתמש חדש והתחל ללמוד';
+    });
+
+    document.getElementById('link-to-login').addEventListener('click', (e) => {
+      e.preventDefault();
+      document.getElementById('register-view').style.display = 'none';
+      document.getElementById('login-view').style.display = 'block';
+      document.getElementById('auth-subtitle').textContent = 'התחבר לחשבון שלך כדי להמשיך ללמוד';
+    });
+
+    // Google Auth Logic
     const initGoogle = () => {
       if (window.google && google.accounts && google.accounts.id) {
         google.accounts.id.initialize({
           client_id: '611572387185-locggqgusn3a64r1eijdei4gege59ltf.apps.googleusercontent.com',
           callback: handleGoogleAuth
         });
-        google.accounts.id.renderButton(
-          document.getElementById('google-btn-container'),
-          { theme: 'filled_black', size: 'large', type: 'standard', shape: 'pill', text: 'continue_with' }
-        );
+        google.accounts.id.renderButton(document.getElementById('google-btn-login-container'), { theme: 'filled_black', size: 'large', type: 'standard', shape: 'pill', text: 'signin_with' });
+        google.accounts.id.renderButton(document.getElementById('google-btn-register-container'), { theme: 'filled_black', size: 'large', type: 'standard', shape: 'pill', text: 'signup_with' });
       } else {
         setTimeout(initGoogle, 100);
       }
@@ -317,61 +394,104 @@
 
     async function handleGoogleAuth(response) {
       pendingGoogleCredential = response.credential;
-      await attemptLogin({ credential: pendingGoogleCredential });
+      await attemptGoogleLogin({ credential: pendingGoogleCredential });
     }
 
-    async function attemptLogin(payload) {
+    async function attemptGoogleLogin(payload) {
       try {
         const user = await api('/auth/login', {
           method: 'POST',
           body: JSON.stringify(payload)
         });
-        
-        // Success
-        currentUser = user;
-        localStorage.setItem('currentUser', JSON.stringify(user));
-        pendingGoogleCredential = null;
-        
-        window.location.hash = '#/';
-        if (window.location.hash === '#/') {
-          onRoute();
-        }
+        finishLogin(user);
       } catch (err) {
         if (err.requiresProfileCompletion) {
-          // Show the profile completion form
-          document.getElementById('google-btn-container').style.display = 'none';
-          document.getElementById('profile-form').style.display = 'block';
-          // Pre-fill the name if possible
-          if (err.name) {
-            document.getElementById('auth-leaderboard').value = err.name;
-          }
-          toast('ברוך הבא! אנא השלם את פרטי ההרשמה.', 'info');
+          document.getElementById('login-view').style.display = 'none';
+          document.getElementById('register-view').style.display = 'none';
+          document.getElementById('google-profile-view').style.display = 'block';
+          if (err.name) document.getElementById('gp-name').value = err.name;
+          toast('אנא השלם את פרטי ההרשמה.', 'info');
         } else {
           toast(err.message || 'שגיאה בהתחברות לגוגל', 'error');
         }
       }
     }
 
-    document.getElementById('profile-form').addEventListener('submit', async (e) => {
+    // Finish Login Helper
+    function finishLogin(user) {
+      currentUser = user;
+      localStorage.setItem('currentUser', JSON.stringify(user));
+      pendingGoogleCredential = null;
+      window.location.hash = '#/';
+      if (window.location.hash === '#/') onRoute();
+    }
+
+    // Google Profile Completion Submit
+    document.getElementById('google-profile-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       if (!pendingGoogleCredential) return;
       
       const payload = {
         credential: pendingGoogleCredential,
-        university: document.getElementById('auth-university').value.trim(),
-        year: document.getElementById('auth-year').value,
-        semester: document.getElementById('auth-semester').value,
-        leaderboard_name: document.getElementById('auth-leaderboard').value.trim()
+        university: document.getElementById('gp-university').value.trim(),
+        year: document.getElementById('gp-year').value,
+        semester: document.getElementById('gp-semester').value,
+        leaderboard_name: document.getElementById('gp-name').value.trim()
       };
 
-      const btn = document.getElementById('btn-submit-profile');
-      btn.disabled = true;
-      btn.textContent = 'מסיים הרשמה...';
+      const btn = document.getElementById('btn-submit-gp');
+      btn.disabled = true; btn.textContent = 'טוען...';
+      await attemptGoogleLogin(payload);
+      btn.disabled = false; btn.textContent = 'סיום הרשמה מול גוגל';
+    });
 
-      await attemptLogin(payload);
+    // Email Login Submit
+    document.getElementById('email-login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('login-email').value.trim();
+      const password = document.getElementById('login-password').value;
+      const btn = e.target.querySelector('button');
+      
+      try {
+        btn.disabled = true; btn.textContent = 'מתחבר...';
+        const user = await api('/auth/login-email', {
+          method: 'POST',
+          body: JSON.stringify({ email, password })
+        });
+        finishLogin(user);
+      } catch (err) {
+        toast(err.message || 'שגיאה בהתחברות', 'error');
+      } finally {
+        btn.disabled = false; btn.textContent = 'התחברות';
+      }
+    });
 
-      btn.disabled = false;
-      btn.textContent = 'סיים הרשמה';
+    // Email Register Submit
+    document.getElementById('email-register-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        email: document.getElementById('reg-email').value.trim(),
+        password: document.getElementById('reg-password').value,
+        university: document.getElementById('reg-university').value.trim(),
+        year: document.getElementById('reg-year').value,
+        semester: document.getElementById('reg-semester').value,
+        leaderboard_name: document.getElementById('reg-name').value.trim()
+      };
+      const btn = e.target.querySelector('button');
+      
+      try {
+        btn.disabled = true; btn.textContent = 'רושם משתמש...';
+        const user = await api('/auth/register-email', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+        finishLogin(user);
+        toast('נרשמת בהצלחה!', 'success');
+      } catch (err) {
+        toast(err.message || 'שגיאה בהרשמה', 'error');
+      } finally {
+        btn.disabled = false; btn.textContent = 'הרשמה';
+      }
     });
   }
 
