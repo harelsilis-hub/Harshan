@@ -5,8 +5,8 @@ const { execSync } = require('child_process');
 process.env.PLAYWRIGHT_BROWSERS_PATH = '0';
 
 try {
-  console.log('Running npx playwright install...');
-  execSync('npx playwright install', { 
+  console.log('Running npx playwright install --with-deps...');
+  execSync('npx playwright install --with-deps', { 
     env: process.env, 
     stdio: 'inherit' 
   });
