@@ -5,9 +5,24 @@ const path = require('path');
 const fs = require('fs');
 const { queryAll, queryOne, execute, runTransaction } = require('../db/schema');
 const axios = require('axios');
+const authMiddleware = require('./authMiddleware');
+
+router.use(authMiddleware);
 
 /* ── Multer config ─────────────────────────────────────── */
-const storage = multer.memoryStorage();
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadPath = path.join(__dirname, '../uploads');
+    if (!fs.existsSync(uploadPath)) {
+      fs.mkdirSync(uploadPath);
+    }
+    cb(null, uploadPath);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + '.pdf');
+  }
+});
 
 const upload = multer({
   storage,
@@ -24,9 +39,9 @@ router.get('/courses/:courseId/lectures', async (req, res) => {
     SELECT l.*,
       (SELECT COUNT(*) FROM flashcards WHERE lecture_id = l.id) AS flashcard_count
     FROM lectures l
-    WHERE l.course_id = ?
+    WHERE l.course_id = ? AND l.user_id = ?
     ORDER BY l.created_at DESC
-  `, [req.params.courseId]);
+  `, [req.params.courseId, req.user.id]);
   res.json(lectures);
 });
 
@@ -34,10 +49,10 @@ router.get('/courses/:courseId/lectures', async (req, res) => {
 router.get('/courses/:courseId/lectures/latest', async (req, res) => {
   const lecture = await queryOne(`
     SELECT * FROM lectures
-    WHERE course_id = ?
+    WHERE course_id = ? AND user_id = ?
     ORDER BY created_at DESC
     LIMIT 1
-  `, [req.params.courseId]);
+  `, [req.params.courseId, req.user.id]);
   res.json(lecture || null);
 });
 
@@ -64,7 +79,8 @@ function parsePageRange(rangeStr) {
 router.post('/courses/:courseId/lectures', upload.single('pdf'), async (req, res) => {
   try {
     const { courseId } = req.params;
-    const { title, pageRange, author_user_id } = req.body;
+    const { title, pageRange } = req.body;
+    const user_id = req.user.id;
 
     if (!title || !title.trim()) {
       return res.status(400).json({ error: 'Lecture title is required' });
@@ -75,7 +91,7 @@ router.post('/courses/:courseId/lectures', upload.single('pdf'), async (req, res
 
     if (req.file) {
       const pdfParse = require('pdf-parse');
-      const buf = req.file.buffer;
+      const buf = fs.readFileSync(req.file.path);
 
       const targetPages = parsePageRange(pageRange);
       let options = {};
@@ -254,7 +270,8 @@ Return ONLY a valid JSON object.
     const summary = summaryParts.join('\\n\\n') || 'מצב חילוץ מקיף: סיכום ההרצאה אינו זמין בתצורה זו.';
 
     /* ── Save lecture and flashcards (Atomic Transaction) ──────────────── */
-    const isPublicInt = req.body.is_public === '1' ? 1 : 0;
+    const isSharedInt = 0; // Default to not shared
+    const file_path = req.file ? `/uploads/${req.file.filename}` : null;
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const nextStr = tomorrow.toISOString().replace('T', ' ').substring(0, 19);
@@ -264,8 +281,8 @@ Return ONLY a valid JSON object.
 
     await runTransaction(async (tx) => {
       const resLec = await tx.execute(
-        'INSERT INTO lectures (course_id, title, summary_content, author_user_id, is_public) VALUES (?, ?, ?, ?, ?)',
-        [courseId, title.trim(), summary, author_user_id ? parseInt(author_user_id, 10) : null, isPublicInt]
+        'INSERT INTO lectures (course_id, title, summary_content, user_id, is_shared, file_path) VALUES (?, ?, ?, ?, ?, ?)',
+        [courseId, title.trim(), summary, user_id, isSharedInt, file_path]
       );
       lectureId = resLec.lastId;
 
@@ -274,9 +291,9 @@ Return ONLY a valid JSON object.
         const appearance_index = i + 1;
         const learning_status = 'pending';
         const resCard = await tx.execute(
-          `INSERT INTO flashcards (course_id, lecture_id, appearance_index, learning_status, question_text, correct_answer, distractors, next_review_date, author_user_id, is_public)
+          `INSERT INTO flashcards (course_id, lecture_id, appearance_index, learning_status, question_text, correct_answer, distractors, next_review_date, user_id, is_shared)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [courseId, lectureId, appearance_index, learning_status, c.front || c.question_text || '', c.back || c.correct_answer || '', JSON.stringify(c.distractors || []), nextStr, author_user_id ? parseInt(author_user_id, 10) : null, isPublicInt]
+          [courseId, lectureId, appearance_index, learning_status, c.front || c.question_text || '', c.back || c.correct_answer || '', JSON.stringify(c.distractors || []), nextStr, user_id, isSharedInt]
         );
         c.id = resCard.lastId;
         c.question_text = c.front || c.question_text || '';
@@ -287,15 +304,14 @@ Return ONLY a valid JSON object.
         c.lecture_summary = summary;
       }
 
-      if (author_user_id) {
-        const uId = parseInt(author_user_id, 10);
-        const user = await tx.queryOne('SELECT * FROM users WHERE id = ?', [uId]);
+      if (user_id) {
+        const user = await tx.queryOne('SELECT * FROM users WHERE id = ?', [user_id]);
         if (user) {
           let { xp, level } = user;
           xp += 50;
           level = Math.floor(Math.sqrt(xp / 50)) + 1;
-          await tx.execute('UPDATE users SET xp = ?, level = ? WHERE id = ?', [xp, level, uId]);
-          updatedUser = await tx.queryOne('SELECT * FROM users WHERE id = ?', [uId]);
+          await tx.execute('UPDATE users SET xp = ?, level = ? WHERE id = ?', [xp, level, user_id]);
+          updatedUser = await tx.queryOne('SELECT * FROM users WHERE id = ?', [user_id]);
         }
       }
     });
@@ -311,8 +327,17 @@ Return ONLY a valid JSON object.
 
 /* ── DELETE lecture ──────────────────────────────────────── */
 router.delete('/lectures/:id', async (req, res) => {
-  await execute('DELETE FROM flashcards WHERE lecture_id = ?', [req.params.id]);
-  const { changes } = await execute('DELETE FROM lectures WHERE id = ?', [req.params.id]);
+  const lecture = await queryOne('SELECT file_path FROM lectures WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
+  if (!lecture) {
+    return res.status(404).json({ error: 'Lecture not found or unauthorized' });
+  }
+
+  if (lecture.file_path) {
+    try { fs.unlinkSync(path.join(__dirname, '..', lecture.file_path)); } catch(e) {}
+  }
+
+  await execute('DELETE FROM flashcards WHERE lecture_id = ? AND user_id = ?', [req.params.id, req.user.id]);
+  const { changes } = await execute('DELETE FROM lectures WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
   if (changes === 0) {
     return res.status(404).json({ error: 'Lecture not found' });
   }
@@ -330,14 +355,15 @@ router.get('/community/lectures', async (req, res) => {
     SELECT l.*, c.name AS course_name, u.username AS author_name,
       (SELECT COUNT(*) FROM flashcards WHERE lecture_id = l.id) AS flashcard_count
     FROM lectures l
-    JOIN users u ON l.author_user_id = u.id
+    JOIN users u ON l.user_id = u.id
     JOIN courses c ON l.course_id = c.id
-    WHERE l.is_public = 1 
+    WHERE l.is_shared = 1 
+      AND l.user_id != ?
       AND u.university = ? 
       AND u.year = ? 
       AND u.semester = ?
     ORDER BY l.likes DESC, l.created_at DESC
-  `, [university, parseInt(year, 10), parseInt(semester, 10)]);
+  `, [req.user.id, university, parseInt(year, 10), parseInt(semester, 10)]);
 
   res.json(lectures);
 });
@@ -345,10 +371,11 @@ router.get('/community/lectures', async (req, res) => {
 /* ── POST share lecture ──────────────────────────────────── */
 router.post('/lectures/:id/share', async (req, res) => {
   const { is_public } = req.body;
-  const { changes } = await execute('UPDATE lectures SET is_public = ? WHERE id = ?', [is_public ? 1 : 0, req.params.id]);
-  if (changes === 0) return res.status(404).json({ error: 'Lecture not found' });
+  const is_shared = is_public ? 1 : 0;
+  const { changes } = await execute('UPDATE lectures SET is_shared = ? WHERE id = ? AND user_id = ?', [is_shared, req.params.id, req.user.id]);
+  if (changes === 0) return res.status(404).json({ error: 'Lecture not found or unauthorized' });
 
-  await execute('UPDATE flashcards SET is_public = ? WHERE lecture_id = ?', [is_public ? 1 : 0, req.params.id]);
+  await execute('UPDATE flashcards SET is_shared = ? WHERE lecture_id = ? AND user_id = ?', [is_shared, req.params.id, req.user.id]);
 
   res.json({ success: true, is_public: !!is_public });
 });
@@ -360,11 +387,57 @@ router.post('/lectures/:id/like', async (req, res) => {
 
   await execute('UPDATE lectures SET likes = likes + 1 WHERE id = ?', [req.params.id]);
 
-  if (lecture.author_user_id) {
-    await execute('UPDATE users SET reputation = reputation + 10 WHERE id = ?', [lecture.author_user_id]);
+  if (lecture.user_id) {
+    await execute('UPDATE users SET reputation = reputation + 10 WHERE id = ?', [lecture.user_id]);
   }
 
   res.json({ success: true });
+});
+
+/* ── GET download PDF ────────────────────────────────────── */
+router.get('/lectures/:id/download', async (req, res) => {
+  console.log('DOWNLOAD ENDPOINT HIT FOR ID:', req.params.id, 'USER ID:', req.user.id);
+  const lecture = await queryOne('SELECT * FROM lectures WHERE id = ?', [req.params.id]);
+  if (!lecture) return res.status(404).json({ error: 'Lecture not found' });
+  if (lecture.user_id !== req.user.id && !lecture.is_shared) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  if (!lecture.file_path) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+
+  const absolutePath = path.join(__dirname, '..', lecture.file_path);
+  res.sendFile(absolutePath);
+});
+
+/* ── POST clone lecture ──────────────────────────────────── */
+router.post('/lectures/:id/clone', async (req, res) => {
+  const originalLecture = await queryOne('SELECT * FROM lectures WHERE id = ? AND is_shared = 1', [req.params.id]);
+  if (!originalLecture) return res.status(404).json({ error: 'Lecture not found or not shared' });
+
+  let newLectureId;
+  await runTransaction(async (tx) => {
+    // Insert cloned lecture
+    const resLec = await tx.execute(
+      'INSERT INTO lectures (course_id, title, summary_content, user_id, is_shared, file_path) VALUES (?, ?, ?, ?, ?, ?)',
+      [originalLecture.course_id, originalLecture.title, originalLecture.summary_content, req.user.id, 0, originalLecture.file_path]
+    );
+    newLectureId = resLec.lastId;
+
+    // Fetch and clone flashcards
+    const flashcards = await tx.queryAll('SELECT * FROM flashcards WHERE lecture_id = ?', [originalLecture.id]);
+    for (const c of flashcards) {
+      await tx.execute(
+        `INSERT INTO flashcards (course_id, lecture_id, appearance_index, learning_status, question_text, correct_answer, distractors, next_review_date, user_id, is_shared)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [c.course_id, newLectureId, c.appearance_index, 'pending', c.question_text, c.correct_answer, c.distractors, null, req.user.id, 0]
+      );
+    }
+  });
+
+  const lecture = await queryOne('SELECT * FROM lectures WHERE id = ?', [newLectureId]);
+  res.status(201).json({ success: true, lecture });
 });
 
 module.exports = router;

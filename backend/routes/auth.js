@@ -3,6 +3,9 @@ const router = express.Router();
 const bcrypt = require('bcrypt');
 const { OAuth2Client } = require('google-auth-library');
 const { queryOne, execute } = require('../db/schema');
+const jwt = require('jsonwebtoken');
+
+const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_for_development_only';
 
 const CLIENT_ID = '611572387185-locggqgusn3a64r1eijdei4gege59ltf.apps.googleusercontent.com';
 const client = new OAuth2Client(CLIENT_ID);
@@ -53,6 +56,9 @@ router.post('/login', async (req, res) => {
   // Remove password from response
   delete user.password;
 
+  const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
+  user.token = token;
+
   res.json(user);
 });
 
@@ -84,6 +90,10 @@ router.post('/register-email', async (req, res) => {
 
     user = await queryOne('SELECT * FROM users WHERE id = ?', [lastId]);
     delete user.password;
+
+    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
+    user.token = token;
+
     res.json(user);
   } catch (err) {
     console.error('Registration error:', err);
@@ -117,6 +127,10 @@ router.post('/login-email', async (req, res) => {
   }
 
   delete user.password;
+
+  const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
+  user.token = token;
+
   res.json(user);
 });
 

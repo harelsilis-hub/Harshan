@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const { queryAll } = require('../db/schema');
+const authMiddleware = require('./authMiddleware');
+
+router.use(authMiddleware);
 
 // GET /api/leaderboard — get top 10 users in a cohort
 router.get('/leaderboard', async (req, res) => {

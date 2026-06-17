@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const { queryAll, queryOne, execute } = require('../db/schema');
+const authMiddleware = require('./authMiddleware');
+
+router.use(authMiddleware);
 
 // GET /api/courses/:courseId/due — due flashcards for a course
 router.get('/courses/:courseId/due', async (req, res) => {
@@ -10,10 +13,11 @@ router.get('/courses/:courseId/due', async (req, res) => {
     FROM flashcards f
     JOIN lectures l ON f.lecture_id = l.id
     WHERE f.course_id = ?
+      AND f.user_id = ?
       AND f.learning_status = 'active'
-      AND f.next_review_date <= datetime('now')
+      AND f.next_review_date <= NOW()
     ORDER BY f.next_review_date ASC
-  `, [req.params.courseId]);
+  `, [req.params.courseId, req.user.id]);
   res.json(cards);
 });
 
@@ -29,10 +33,10 @@ router.post('/courses/:courseId/drip-feed', async (req, res) => {
 
   const pendingCards = await queryAll(`
     SELECT id FROM flashcards
-    WHERE course_id = ? AND learning_status = 'pending'
+    WHERE course_id = ? AND learning_status = 'pending' AND user_id = ?
     ORDER BY appearance_index ASC
     LIMIT ?
-  `, [req.params.courseId, limit]);
+  `, [req.params.courseId, req.user.id, limit]);
 
   if (pendingCards.length === 0) {
     return res.json({ unlocked: 0, cards: [] });
@@ -43,9 +47,9 @@ router.post('/courses/:courseId/drip-feed', async (req, res) => {
   
   await execute(`
     UPDATE flashcards
-    SET learning_status = 'active', next_review_date = datetime('now'), interval = 0, repetitions = 0
-    WHERE id IN (${placeholders})
-  `, ids);
+    SET learning_status = 'active', next_review_date = NOW(), interval = 0, repetitions = 0
+    WHERE id IN (${placeholders}) AND user_id = ?
+  `, [...ids, req.user.id]);
 
   const unlockedCards = await queryAll(`
     SELECT f.*, l.title AS lecture_title, l.summary_content AS lecture_summary
@@ -64,9 +68,9 @@ router.get('/courses/:courseId/flashcards', async (req, res) => {
     SELECT f.*, l.title AS lecture_title, l.summary_content AS lecture_summary
     FROM flashcards f
     JOIN lectures l ON f.lecture_id = l.id
-    WHERE f.course_id = ?
+    WHERE f.course_id = ? AND f.user_id = ?
     ORDER BY f.next_review_date ASC
-  `, [req.params.courseId]);
+  `, [req.params.courseId, req.user.id]);
   res.json(cards);
 });
 
@@ -76,11 +80,11 @@ router.get('/courses/:courseId/cram', async (req, res) => {
     SELECT f.*, l.title AS lecture_title, l.summary_content AS lecture_summary
     FROM flashcards f
     JOIN lectures l ON f.lecture_id = l.id
-    WHERE f.course_id = ?
+    WHERE f.course_id = ? AND f.user_id = ?
       AND f.learning_status IN ('active', 'pending')
     ORDER BY f.easiness_factor ASC
     LIMIT 50
-  `, [req.params.courseId]);
+  `, [req.params.courseId, req.user.id]);
   res.json(cards);
 });
 
@@ -92,9 +96,9 @@ router.post('/courses/:courseId/cram-generate', async (req, res) => {
     // Fetch up to 3 lecture summaries for context
     const lectures = await queryAll(`
       SELECT summary_content FROM lectures
-      WHERE course_id = ? AND summary_content IS NOT NULL
+      WHERE course_id = ? AND user_id = ? AND summary_content IS NOT NULL
       ORDER BY RANDOM() LIMIT 3
-    `, [courseId]);
+    `, [courseId, req.user.id]);
 
     if (lectures.length === 0) {
       return res.json([]);
@@ -180,12 +184,14 @@ ${combinedSummary}
 });
 
 router.post('/flashcards/:id/review', async (req, res) => {
-  const { quality, user_id, is_cram_mode } = req.body;
+  const { quality, is_cram_mode } = req.body;
+  const user_id = req.user.id;
+  
   if (quality === undefined || quality < 0 || quality > 5) {
     return res.status(400).json({ error: 'Quality score must be between 0 and 5' });
   }
 
-  const card = await queryOne('SELECT * FROM flashcards WHERE id = ?', [req.params.id]);
+  const card = await queryOne('SELECT * FROM flashcards WHERE id = ? AND user_id = ?', [req.params.id, user_id]);
   if (!card) return res.status(404).json({ error: 'Flashcard not found' });
 
   /* ── SM-2 Algorithm ─────────────────────────────────── */
@@ -219,8 +225,8 @@ router.post('/flashcards/:id/review', async (req, res) => {
     await execute(`
       UPDATE flashcards
       SET easiness_factor = ?, interval = ?, repetitions = ?, next_review_date = ?, learning_status = 'active'
-      WHERE id = ?
-    `, [easiness_factor, interval, repetitions, nextStr, req.params.id]);
+      WHERE id = ? AND user_id = ?
+    `, [easiness_factor, interval, repetitions, nextStr, req.params.id, user_id]);
   } else {
     // In cram mode, we just mutate the in-memory object to reflect the "simulated" result 
     // for immediate UI feedback, without writing to the DB.

@@ -17,6 +17,7 @@
     "express": "^4.21.0",
     "google-auth-library": "^10.7.0",
     "is-odd": "^3.0.1",
+    "jsonwebtoken": "^9.0.3",
     "multer": "^1.4.5-lts.1",
     "node-ical": "^0.26.1",
     "pdf-lib": "^1.17.1",

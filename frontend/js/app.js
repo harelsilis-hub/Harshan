@@ -10,9 +10,14 @@
 
   /* ── API Helper ────────────────────────────────────── */
   async function api(path, opts = {}) {
+    const headers = { 'Content-Type': 'application/json', ...opts.headers };
+    if (typeof currentUser !== 'undefined' && currentUser && currentUser.token) {
+      headers['Authorization'] = `Bearer ${currentUser.token}`;
+    }
+
     const res = await fetch(`/api${path}`, {
-      headers: { 'Content-Type': 'application/json', ...opts.headers },
       ...opts,
+      headers
     });
     if (!res.ok) {
       const errPayload = await res.json().catch(() => ({ error: res.statusText }));
@@ -1119,6 +1124,17 @@
         <button class="btn btn-warning" id="btn-cram-mode" style="background:#f59e0b; border-color:#f59e0b; color:white; font-weight:600;">🔥 מצב חרישה</button>
       </div>
 
+      ${course.due_count > 0 ? `
+      <div class="state-banner state-banner-review" style="margin-bottom: 2rem; background: rgba(16,185,129,0.1); border-color: #10b981;">
+        <div class="state-icon">✅</div>
+        <div class="state-info">
+          <h3>יש לך ${course.due_count} כרטיסיות לביצוע כעת!</h3>
+          <p>זה הזמן לחזור על החומר כדי שלא תשכח.</p>
+        </div>
+        <button class="btn btn-success" id="btn-review-due" style="margin-right:auto;">התחל חזרה</button>
+      </div>
+      ` : ''}
+
       ${course.pending_count > 0 ? `
       <div class="state-banner state-banner-learn" style="margin-bottom: 2rem; background: rgba(59,130,246,0.1); border-color: #3b82f6;">
         <div class="state-icon">🆕</div>
@@ -1128,7 +1144,7 @@
         </div>
         <button class="btn btn-primary" id="btn-learn-pending" style="margin-right:auto;">למד עכשיו</button>
       </div>
-      ` : `
+      ` : (course.due_count === 0 ? `
       <div class="state-banner state-banner-learn" style="margin-bottom: 2rem;">
         <div class="state-icon">📖</div>
         <div class="state-info">
@@ -1136,7 +1152,7 @@
           <p>העלה הרצאה חדשה כדי להתחיל ברצף הלמידה.</p>
         </div>
       </div>
-      `}
+      ` : '')}
 
       <div class="upload-section" id="upload-section">
         <div class="form-group" style="display:flex; gap:1rem;">
@@ -1176,7 +1192,7 @@
           learnPendingBtn.disabled = true;
           const res = await api(`/courses/${courseId}/drip-feed`, { 
             method: 'POST', 
-            body: { limit: 15 } 
+            body: JSON.stringify({ limit: 15 }) 
           });
           
           if (!res.cards || res.cards.length === 0) {
@@ -1200,6 +1216,39 @@
           toast('שגיאה בטעינת כרטיסיות: ' + err.message, 'error');
           learnPendingBtn.innerHTML = 'למד עכשיו';
           learnPendingBtn.disabled = false;
+        }
+      });
+    }
+
+    const reviewDueBtn = document.getElementById('btn-review-due');
+    if (reviewDueBtn) {
+      reviewDueBtn.addEventListener('click', async () => {
+        try {
+          reviewDueBtn.innerHTML = '<div class="spinner"></div>';
+          reviewDueBtn.disabled = true;
+          const dueCards = await api(`/courses/${courseId}/due`);
+          
+          if (!dueCards || dueCards.length === 0) {
+            toast('אין כרטיסיות לביצוע כעת.', 'warning');
+            renderCourseDetail(courseId);
+            return;
+          }
+
+          $app.innerHTML = `
+            <div class="page-header" style="text-align:center; display:flex; flex-direction:column; align-items:center;">
+              <h1 style="font-size:1.8rem;">חזרה על חומר קודם</h1>
+              <p style="color:var(--text-secondary); margin-top:0.5rem;">סקור כרטיסיות כדי לשפר את הזיכרון.</p>
+            </div>
+            <div id="sequence-container" style="max-width: 600px; margin: 0 auto;"></div>
+          `;
+          const seqContainer = document.getElementById('sequence-container');
+          await runSM2Reviews(courseId, dueCards, seqContainer);
+          toast('סיימת את כל החזרות להיום!', 'success');
+          renderCourseDetail(courseId);
+        } catch (err) {
+          toast('שגיאה בטעינת החזרה', 'error');
+          reviewDueBtn.innerHTML = 'התחל חזרה';
+          reviewDueBtn.disabled = false;
         }
       });
     }
@@ -1277,7 +1326,34 @@
           renderCourseDetail(courseId);
         } catch (err) {
           toast(err.message, 'error');
-          btn.disabled = false;
+        }
+      });
+    });
+
+    $app.querySelectorAll('.download-lecture-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        try {
+          const id = parseInt(btn.dataset.id, 10);
+          const response = await fetch('/api/lectures/' + id + '/download', {
+            headers: { 'Authorization': 'Bearer ' + currentUser.token }
+          });
+          if (!response.ok) {
+             const errorData = await response.json().catch(() => ({}));
+             throw new Error(errorData.error || 'Failed to download PDF');
+          }
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.style.display = 'none';
+          a.href = url;
+          const lect = lectures.find(x => x.id === id) || { title: 'lecture' };
+          a.download = lect.title + '.pdf';
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+        } catch(err) {
+          toast(err.message, 'error');
         }
       });
     });
@@ -1297,6 +1373,7 @@
             </div>
             <div style="display:flex; gap:0.5rem; align-items:center;">
               ${!l.is_public ? `<button class="share-lecture-btn btn btn-outline btn-sm" data-id="${l.id}">שתף לקהילה</button>` : ''}
+              <button class="download-lecture-btn btn btn-ghost" data-id="${l.id}" title="הורד PDF" style="color:var(--text); padding:0.25rem 0.5rem; font-size:1.2rem;">📥</button>
               <button class="view-summary-btn btn btn-ghost" title="הצג סיכום" style="color:var(--primary); padding:0.25rem 0.5rem; font-size:1.2rem;">📖</button>
               <button class="delete-lecture-btn btn btn-ghost" data-id="${l.id}" data-name="${escapeHtml(l.title)}" title="מחק הרצאה" style="color:var(--danger); padding:0.25rem 0.5rem; font-size:1.2rem;">🗑️</button>
             </div>
@@ -1360,8 +1437,10 @@
                           <div style="font-size:0.8rem; font-weight:bold;">${l.likes} לייקים</div>
                         </div>
                       </div>
-                      <div style="margin-top:1rem;">
+                      <div style="margin-top:1rem; display:flex; gap:0.5rem; flex-wrap:wrap;">
                         <button class="btn btn-outline btn-sm comm-view-summary-btn" data-id="${l.id}">📖 קרא סיכום</button>
+                        <button class="btn btn-outline btn-sm comm-download-btn" data-id="${l.id}" title="הורד PDF">📥 PDF</button>
+                        <button class="btn btn-outline btn-sm comm-clone-btn" data-id="${l.id}" title="שכפל לחשבון שלי">📋 שכפל</button>
                       </div>
                     </div>
                   `).join('')}
@@ -1414,6 +1493,48 @@
         const id = parseInt(btn.dataset.id, 10);
         const lect = lectures.find(x => x.id === id);
         if (lect) showSummaryModal(lect.summary_content);
+      });
+    });
+
+    $app.querySelectorAll('.comm-download-btn, .download-lecture-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        try {
+          const id = parseInt(btn.dataset.id, 10);
+          const response = await fetch('/api/lectures/' + id + '/download', {
+            headers: { 'Authorization': 'Bearer ' + currentUser.token }
+          });
+          if (!response.ok) {
+             const errorData = await response.json().catch(() => ({}));
+             throw new Error(errorData.error || 'Failed to download PDF');
+          }
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.style.display = 'none';
+          a.href = url;
+          const lect = lectures.find(x => x.id === id) || { title: 'lecture' };
+          a.download = lect.title + '.pdf';
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+        } catch(e) {
+          toast(e.message, 'error');
+        }
+      });
+    });
+
+    $app.querySelectorAll('.comm-clone-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        try {
+          btn.disabled = true;
+          const id = parseInt(btn.dataset.id, 10);
+          await api('/lectures/' + id + '/clone', { method: 'POST' });
+          toast('ההרצאה שוכפלה בהצלחה!', 'success');
+          btn.textContent = '✅ שוכפל';
+        } catch(e) {
+          toast(e.message, 'error');
+          btn.disabled = false;
+        }
       });
     });
 
@@ -1494,6 +1615,7 @@
       const [uploadResult, dueכרטיסיות] = await Promise.all([
         fetch(`/api/courses/${courseId}/lectures`, {
           method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + currentUser.token },
           body: uploadFormData,
         }).then(r => r.json()),
         api(`/courses/${courseId}/due`)
@@ -1502,7 +1624,9 @@
       if (uploadResult.error) throw new Error(uploadResult.error);
 
       if (uploadResult.user) {
+        const oldToken = currentUser.token;
         currentUser = uploadResult.user;
+        currentUser.token = oldToken;
         localStorage.setItem('currentUser', JSON.stringify(currentUser));
         updateNav();
       }
@@ -1680,7 +1804,9 @@
               body: JSON.stringify({ quality, user_id: currentUser ? currentUser.id : null, is_cram_mode: isCramMode }),
             });
             if (res && res.user) {
+              const oldToken = currentUser.token;
               currentUser = res.user;
+              currentUser.token = oldToken;
               localStorage.setItem('currentUser', JSON.stringify(currentUser));
               updateNav();
             }
@@ -1841,7 +1967,9 @@
               body: JSON.stringify({ quality, user_id: currentUser ? currentUser.id : null }),
             });
             if (res && res.user) {
+              const oldToken = currentUser.token;
               currentUser = res.user;
+              currentUser.token = oldToken;
               localStorage.setItem('currentUser', JSON.stringify(currentUser));
               updateNav();
             }

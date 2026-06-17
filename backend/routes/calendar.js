@@ -2,15 +2,14 @@ const express = require('express');
 const router = express.Router();
 const { queryAll, execute, queryOne } = require('../db/schema');
 const { extractMoodleCalendarUrl, fetchAndParseIcs } = require('../moodle_ical_extractor');
+const authMiddleware = require('./authMiddleware');
+
+router.use(authMiddleware);
 
 // GET /api/calendar
 // Fetch private events for a user
 router.get('/', async (req, res) => {
-  const { user_id } = req.query;
-  
-  if (!user_id) {
-    return res.status(400).json({ error: 'user_id query param is required' });
-  }
+  const user_id = req.user.id;
 
   const events = await queryAll(`
     SELECT * FROM calendar_events 
@@ -24,10 +23,11 @@ router.get('/', async (req, res) => {
 // POST /api/calendar/sync-moodle
 // Sync moodle calendar for a user
 router.post('/sync-moodle', async (req, res) => {
-  const { moodle_username, moodle_password, user_id } = req.body;
+  const { moodle_username, moodle_password } = req.body;
+  const user_id = req.user.id;
   
-  if (!moodle_username || !moodle_password || !user_id) {
-    return res.status(400).json({ error: 'moodle_username, moodle_password, and user_id are required' });
+  if (!moodle_username || !moodle_password) {
+    return res.status(400).json({ error: 'moodle_username and moodle_password are required' });
   }
 
   try {
@@ -109,7 +109,8 @@ router.put('/:id/toggle', async (req, res) => {
   const { is_completed } = req.body;
   
   try {
-    await execute('UPDATE calendar_events SET is_completed = ? WHERE id = ?', [is_completed ? 1 : 0, id]);
+    const { changes } = await execute('UPDATE calendar_events SET is_completed = ? WHERE id = ? AND user_id = ?', [is_completed ? 1 : 0, id, req.user.id]);
+    if (changes === 0) return res.status(404).json({ error: 'Event not found or unauthorized' });
     res.json({ success: true, is_completed: is_completed ? 1 : 0 });
   } catch (error) {
     console.error('Failed to toggle event status:', error);
