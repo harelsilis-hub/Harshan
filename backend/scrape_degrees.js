@@ -18,7 +18,7 @@ async function scrapeDegrees() {
     console.log('Navigating to BGU syllabus portal...');
     // Navigate to the main gate URL
     await page.goto('https://bgu4u.bgu.ac.il/pls/scwp/!app.gate?app=ann', {
-      waitUntil: 'networkidle',
+      waitUntil: 'domcontentloaded',
       timeout: 60000
     });
 
@@ -56,11 +56,6 @@ async function scrapeDegrees() {
     }
 
     console.log(`Successfully extracted ${degrees.length} departments.`);
-
-    // Save the extracted data into a local JSON file (optional if used as a module)
-    const outputPath = path.join(__dirname, 'degrees.json');
-    await fs.writeFile(outputPath, JSON.stringify(degrees, null, 2), 'utf8');
-    console.log(`Saved extracted data to: ${outputPath}`);
 
     return degrees;
   } catch (error) {
