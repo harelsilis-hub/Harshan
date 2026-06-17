@@ -1104,11 +1104,7 @@
           learnPendingBtn.disabled = true;
           const res = await api(`/courses/${courseId}/drip-feed`, { 
             method: 'POST', 
-<<<<<<< HEAD
-            body: JSON.stringify({ limit: 15, user_id: currentUser.id }) 
-=======
-            body: JSON.stringify({ limit: 15 }) 
->>>>>>> ea261d5 (Fix cram generation JSON trailing brackets and drip-feed body serialization)
+            body: JSON.stringify({ limit: 15, user_id: currentUser.id })
           });
           
           if (!res.cards || res.cards.length === 0) {
