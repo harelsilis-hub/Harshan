@@ -1047,6 +1047,16 @@
         <button class="btn btn-warning" id="btn-cram-mode" style="background:#f59e0b; border-color:#f59e0b; color:white; font-weight:600;">🔥 מצב חרישה</button>
       </div>
 
+      ${course.pending_count > 0 ? `
+      <div class="state-banner state-banner-learn" style="margin-bottom: 2rem; background: rgba(59,130,246,0.1); border-color: #3b82f6;">
+        <div class="state-icon">🆕</div>
+        <div class="state-info">
+          <h3>יש לך ${course.pending_count} כרטיסיות חדשות שממתינות ללמידה!</h3>
+          <p>לחץ כדי לפתוח וללמוד מנה של עד 15 כרטיסיות חדשות.</p>
+        </div>
+        <button class="btn btn-primary" id="btn-learn-pending" style="margin-right:auto;">למד עכשיו</button>
+      </div>
+      ` : `
       <div class="state-banner state-banner-learn" style="margin-bottom: 2rem;">
         <div class="state-icon">📖</div>
         <div class="state-info">
@@ -1054,6 +1064,7 @@
           <p>העלה הרצאה חדשה כדי להתחיל ברצף הלמידה.</p>
         </div>
       </div>
+      `}
 
       <div class="upload-section" id="upload-section">
         <div class="form-group" style="display:flex; gap:1rem;">
@@ -1084,6 +1095,42 @@
     `;
 
     initUploadEngine(courseId);
+
+    const learnPendingBtn = document.getElementById('btn-learn-pending');
+    if (learnPendingBtn) {
+      learnPendingBtn.addEventListener('click', async () => {
+        try {
+          learnPendingBtn.innerHTML = '<div class="spinner"></div>';
+          learnPendingBtn.disabled = true;
+          const res = await api(`/courses/${courseId}/drip-feed`, { 
+            method: 'POST', 
+            body: { limit: 15 } 
+          });
+          
+          if (!res.cards || res.cards.length === 0) {
+            toast('אין כרטיסיות חדשות זמינות.', 'warning');
+            renderCourseDetail(courseId);
+            return;
+          }
+
+          $app.innerHTML = `
+            <div class="page-header" style="text-align:center; display:flex; flex-direction:column; align-items:center;">
+              <h1 style="font-size:1.8rem;">כרטיסיות חדשות</h1>
+              <p style="color:var(--text-secondary); margin-top:0.5rem;">לומדים כעת ${res.cards.length} מושגים חדשים.</p>
+            </div>
+            <div id="sequence-container" style="max-width: 600px; margin: 0 auto;"></div>
+          `;
+          const seqContainer = document.getElementById('sequence-container');
+          await runSM2Reviews(courseId, res.cards, seqContainer);
+          toast('סיימת ללמוד את מקבץ הכרטיסיות החדשות!', 'success');
+          renderCourseDetail(courseId);
+        } catch (err) {
+          toast('שגיאה בטעינת כרטיסיות: ' + err.message, 'error');
+          learnPendingBtn.innerHTML = 'למד עכשיו';
+          learnPendingBtn.disabled = false;
+        }
+      });
+    }
 
     const cramBtn = document.getElementById('btn-cram-mode');
     if (cramBtn) {

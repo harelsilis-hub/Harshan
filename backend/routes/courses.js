@@ -12,7 +12,11 @@ router.get('/', async (req, res) => {
       (SELECT COUNT(*) FROM flashcards WHERE course_id = c.id) AS flashcard_count,
       (SELECT COUNT(*) FROM flashcards
          WHERE course_id = c.id
-           AND next_review_date <= datetime('now')) AS due_count
+           AND learning_status = 'active'
+           AND next_review_date <= datetime('now')) AS due_count,
+      (SELECT COUNT(*) FROM flashcards
+         WHERE course_id = c.id
+           AND learning_status = 'pending') AS pending_count
     FROM courses c
     ${filterClause}
     ORDER BY c.created_at DESC
@@ -28,7 +32,11 @@ router.get('/:id', async (req, res) => {
       (SELECT COUNT(*) FROM flashcards WHERE course_id = c.id) AS flashcard_count,
       (SELECT COUNT(*) FROM flashcards
          WHERE course_id = c.id
-           AND next_review_date <= datetime('now')) AS due_count
+           AND learning_status = 'active'
+           AND next_review_date <= datetime('now')) AS due_count,
+      (SELECT COUNT(*) FROM flashcards
+         WHERE course_id = c.id
+           AND learning_status = 'pending') AS pending_count
     FROM courses c
     WHERE c.id = ?
   `, [req.params.id]);
