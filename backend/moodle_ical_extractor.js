@@ -1,4 +1,4 @@
-const { chromium } = require('playwright');
+const puppeteer = require('puppeteer');
 const axios = require('axios');
 const ical = require('node-ical'); 
 
@@ -11,95 +11,90 @@ const ical = require('node-ical');
  */
 async function extractMoodleCalendarUrl(username, password) {
   let browser;
-  let context;
   try {
-    // 1. Initialize headless browser and isolated context
-    browser = await chromium.launch({ headless: true });
-    context = await browser.newContext();
-    const page = await context.newPage();
+    // 1. Initialize headless browser (Puppeteer handles Render dependencies better)
+    browser = await puppeteer.launch({ 
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'] // Crucial for Render
+    });
+    const page = await browser.newPage();
 
     // 2. Navigate to the login page
     const loginUrl = 'https://moodle.bgu.ac.il/moodle/login/index.php';
-    await page.goto(loginUrl, { waitUntil: 'networkidle' });
+    await page.goto(loginUrl, { waitUntil: 'networkidle2' });
 
-    // 3. Fill credentials and login using explicit waits
-    const usernameInput = page.locator('#username');
-    const passwordInput = page.locator('#password');
-    
-    await usernameInput.waitFor({ state: 'visible' });
-    await usernameInput.fill(username);
-    
-    // Explicitly avoiding logging the password or passing it to external APIs
-    await passwordInput.fill(password);
+    // 3. Fill credentials and login
+    await page.waitForSelector('#username', { visible: true });
+    await page.type('#username', username);
+    await page.type('#password', password);
     
     // Using typical Moodle login button selectors
-    await page.click('#loginbtn, button[type="submit"]');
-
-    // Wait for authentication request to complete
-    await page.waitForLoadState('networkidle');
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle2' }),
+      page.click('#loginbtn, button[type="submit"]')
+    ]);
 
     // Check if we are still on the login page (means authentication failed)
     if (page.url().includes('/login/index.php')) {
         let errorText = 'Invalid Moodle credentials';
-        const errorEl = page.locator('.alert-danger, #loginerrormessage, .error').first();
-        if (await errorEl.count() > 0) {
-            errorText = await errorEl.innerText();
-        }
+        try {
+          const errorEl = await page.$('.alert-danger, #loginerrormessage, .error');
+          if (errorEl) {
+              errorText = await page.evaluate(el => el.innerText, errorEl);
+          }
+        } catch (e) {}
         throw new Error('INVALID_CREDENTIALS: ' + errorText.trim());
     }
 
     // 4. Navigate directly to the calendar export page
     const exportUrl = 'https://moodle.bgu.ac.il/moodle/calendar/export.php';
-    await page.goto(exportUrl, { waitUntil: 'networkidle' });
+    await page.goto(exportUrl, { waitUntil: 'networkidle2' });
 
     // 5. Select "Events related to courses"
-    // Using value="courses" which is standard in Moodle
-    const coursesRadio = page.locator('input[type="radio"][value="courses"], input[type="radio"][name="events"][value="courses"]').first();
-    await coursesRadio.waitFor({ state: 'visible' });
-    await coursesRadio.check();
+    await page.waitForSelector('input[type="radio"][value="courses"], input[type="radio"][name="events"][value="courses"]', { visible: true });
+    await page.evaluate(() => {
+        const el = document.querySelector('input[type="radio"][value="courses"], input[type="radio"][name="events"][value="courses"]');
+        if (el) el.click();
+    });
 
     // 6. Select "This month"
-    // Using value="monthnow" or similar standard Moodle value
-    const monthRadio = page.locator('input[type="radio"][value="monthnow"], input[type="radio"][name="period"][value="monthnow"]').first();
-    await monthRadio.check();
+    await page.evaluate(() => {
+        const el = document.querySelector('input[type="radio"][value="monthnow"], input[type="radio"][name="period"][value="monthnow"]');
+        if (el) el.click();
+    });
 
     // 7. Click the "Get calendar URL" button
-    const generateBtn = page.locator('#generateurl, #id_generateurl, [name="generateurl"], button:has-text("Get calendar URL"), input[value="Get calendar URL"]').first();
-    
     try {
-        await generateBtn.waitFor({ state: 'visible', timeout: 5000 });
-        await generateBtn.click();
+        await page.waitForSelector('#generateurl, #id_generateurl, [name="generateurl"], input[value="Get calendar URL"]', { visible: true, timeout: 5000 });
+        await Promise.all([
+          page.waitForNavigation({ waitUntil: 'networkidle2' }).catch(() => {}), // Sometimes it navigates, sometimes AJAX
+          page.evaluate(() => {
+              const el = document.querySelector('#generateurl, #id_generateurl, [name="generateurl"], input[value="Get calendar URL"]');
+              if (el) el.click();
+          })
+        ]);
     } catch (error) {
-        const fs = require('fs');
-        const path = require('path');
-        fs.writeFileSync(path.join(__dirname, 'moodle_debug_dump.html'), await page.content());
-        console.error('Failed to find the "Get calendar URL" button. Page HTML dumped to moodle_debug_dump.html');
+        console.error('Failed to find the "Get calendar URL" button.');
         throw error;
     }
 
     // 8. Wait for the generated URL to appear
-    const urlContainer = page.locator('#calendarexporturl, .calendarurl, #calendarurl, div.box.py-3.generalbox > div.mt-1').first();
-    await urlContainer.waitFor({ state: 'visible', timeout: 5000 });
+    await page.waitForSelector('#calendarexporturl, .calendarurl, #calendarurl, div.box.py-3.generalbox > div.mt-1', { visible: true, timeout: 5000 });
     
     // Check if it's an input field or a standard container
-    const isInput = await urlContainer.evaluate(node => node.tagName === 'INPUT');
-    let icsUrlText = isInput ? await urlContainer.inputValue() : await urlContainer.innerText();
-    
-    if (!icsUrlText.match(/https?:\/\/[^\s"'>]+/)) {
-        // Try finding an input inside the container as a fallback
-        const innerInput = urlContainer.locator('input[type="text"]').first();
-        if (await innerInput.count() > 0) {
-            icsUrlText = await innerInput.inputValue();
-        }
-    }
+    let icsUrlText = await page.evaluate(() => {
+        const urlContainer = document.querySelector('#calendarexporturl, .calendarurl, #calendarurl, div.box.py-3.generalbox > div.mt-1');
+        if (!urlContainer) return '';
+        if (urlContainer.tagName === 'INPUT') return urlContainer.value;
+        const innerInput = urlContainer.querySelector('input[type="text"]');
+        if (innerInput) return innerInput.value;
+        return urlContainer.innerText;
+    });
     
     // Extract actual URL if there's surrounding text
     const urlMatch = icsUrlText.match(/https?:\/\/[^\s"'>]+/);
     if (!urlMatch) {
-      const fs = require('fs');
-      const path = require('path');
-      fs.writeFileSync(path.join(__dirname, 'moodle_debug_dump_url.html'), await page.content());
-      throw new Error(`Could not parse the URL from the page text. Text found: "${icsUrlText}". Page dumped to moodle_debug_dump_url.html`);
+      throw new Error(`Could not parse the URL from the page text. Text found: "${icsUrlText}"`);
     }
     
     // 9. Fetch course mapping using Moodle API
@@ -132,14 +127,10 @@ async function extractMoodleCalendarUrl(username, password) {
     return { url: urlMatch[0], courseMapping };
 
   } catch (error) {
-    // Rethrow error to be handled by the caller microservice
-    console.error('An error occurred during Playwright extraction.', error.message);
+    console.error('An error occurred during Puppeteer extraction.', error.message);
     throw error;
   } finally {
-    // 9. Close context and browser immediately to prevent memory leaks
-    if (context) {
-      await context.close();
-    }
+    // Close browser immediately to prevent memory leaks
     if (browser) {
       await browser.close();
     }
