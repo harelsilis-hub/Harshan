@@ -4,19 +4,18 @@ const { queryAll, queryOne, execute } = require('../db/schema');
 
 // GET /api/courses — list all courses with stats (optionally filter by semester_id)
 router.get('/', async (req, res) => {
-  const { semester_id, user_id } = req.query;
+  const { semester_id } = req.query;
   const filterClause = semester_id ? `WHERE c.semester_id = ${parseInt(semester_id, 10)}` : '';
-  const uId = user_id ? parseInt(user_id, 10) : 0;
   const courses = await queryAll(`
     SELECT c.*,
-      (SELECT COUNT(*) FROM lectures  WHERE course_id = c.id AND (author_user_id = ${uId} OR is_public = 1)) AS lecture_count,
-      (SELECT COUNT(*) FROM flashcards WHERE course_id = c.id AND (author_user_id = ${uId} OR is_public = 1)) AS flashcard_count,
+      (SELECT COUNT(*) FROM lectures  WHERE course_id = c.id) AS lecture_count,
+      (SELECT COUNT(*) FROM flashcards WHERE course_id = c.id) AS flashcard_count,
       (SELECT COUNT(*) FROM flashcards
-         WHERE course_id = c.id AND (author_user_id = ${uId} OR is_public = 1)
+         WHERE course_id = c.id
            AND learning_status = 'active'
            AND next_review_date <= datetime('now')) AS due_count,
       (SELECT COUNT(*) FROM flashcards
-         WHERE course_id = c.id AND (author_user_id = ${uId} OR is_public = 1)
+         WHERE course_id = c.id
            AND learning_status = 'pending') AS pending_count
     FROM courses c
     ${filterClause}
@@ -27,18 +26,16 @@ router.get('/', async (req, res) => {
 
 // GET /api/courses/:id — single course with stats
 router.get('/:id', async (req, res) => {
-  const { user_id } = req.query;
-  const uId = user_id ? parseInt(user_id, 10) : 0;
   const course = await queryOne(`
     SELECT c.*,
-      (SELECT COUNT(*) FROM lectures  WHERE course_id = c.id AND (author_user_id = ${uId} OR is_public = 1)) AS lecture_count,
-      (SELECT COUNT(*) FROM flashcards WHERE course_id = c.id AND (author_user_id = ${uId} OR is_public = 1)) AS flashcard_count,
+      (SELECT COUNT(*) FROM lectures  WHERE course_id = c.id) AS lecture_count,
+      (SELECT COUNT(*) FROM flashcards WHERE course_id = c.id) AS flashcard_count,
       (SELECT COUNT(*) FROM flashcards
-         WHERE course_id = c.id AND (author_user_id = ${uId} OR is_public = 1)
+         WHERE course_id = c.id
            AND learning_status = 'active'
            AND next_review_date <= datetime('now')) AS due_count,
       (SELECT COUNT(*) FROM flashcards
-         WHERE course_id = c.id AND (author_user_id = ${uId} OR is_public = 1)
+         WHERE course_id = c.id
            AND learning_status = 'pending') AS pending_count
     FROM courses c
     WHERE c.id = ?

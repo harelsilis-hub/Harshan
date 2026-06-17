@@ -889,7 +889,7 @@
   async function renderSemesterDetail(semesterId) {
     const [semester, courses] = await Promise.all([
       api(`/semesters/${semesterId}`),
-      api(`/courses?semester_id=${semesterId}&user_id=${currentUser.id}`)
+      api(`/courses?semester_id=${semesterId}`)
     ]);
 
     $app.innerHTML = `
@@ -1029,8 +1029,8 @@
      ═════════════════════════════════════════════════════ */
   async function renderCourseDetail(courseId) {
     const [course, lectures] = await Promise.all([
-      api(`/courses/${courseId}?user_id=${currentUser.id}`),
-      api(`/courses/${courseId}/lectures?user_id=${currentUser.id}`),
+      api(`/courses/${courseId}`),
+      api(`/courses/${courseId}/lectures`),
     ]);
 
     $app.innerHTML = `
@@ -1104,7 +1104,7 @@
           learnPendingBtn.disabled = true;
           const res = await api(`/courses/${courseId}/drip-feed`, { 
             method: 'POST', 
-            body: JSON.stringify({ limit: 15, user_id: currentUser.id })
+            body: { limit: 15 } 
           });
           
           if (!res.cards || res.cards.length === 0) {
@@ -1141,7 +1141,7 @@
         cramBtn.disabled = true;
 
         try {
-          const cramCards = await api(`/courses/${courseId}/cram-generate`, { method: 'POST', body: JSON.stringify({ user_id: currentUser.id }) });
+          const cramCards = await api(`/courses/${courseId}/cram-generate`, { method: 'POST' });
           if (!cramCards || cramCards.length === 0) {
             toast('אין מספיק חומר בקורס כדי לייצר שאלות.', 'warning');
             cramBtn.innerHTML = originalText;
@@ -1424,7 +1424,7 @@
           method: 'POST',
           body: uploadFormData,
         }).then(r => r.json()),
-        api(`/courses/${courseId}/due?user_id=${currentUser.id}`)
+        api(`/courses/${courseId}/due`)
       ]);
 
       if (uploadResult.error) throw new Error(uploadResult.error);

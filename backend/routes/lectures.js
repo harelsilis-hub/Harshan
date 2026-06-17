@@ -20,28 +20,24 @@ const upload = multer({
 
 /* ── GET lectures ──────────────────────────────────────── */
 router.get('/courses/:courseId/lectures', async (req, res) => {
-  const { user_id } = req.query;
-  const uId = user_id ? parseInt(user_id, 10) : 0;
   const lectures = await queryAll(`
     SELECT l.*,
       (SELECT COUNT(*) FROM flashcards WHERE lecture_id = l.id) AS flashcard_count
     FROM lectures l
-    WHERE l.course_id = ? AND (l.author_user_id = ? OR l.is_public = 1)
+    WHERE l.course_id = ?
     ORDER BY l.created_at DESC
-  `, [req.params.courseId, uId]);
+  `, [req.params.courseId]);
   res.json(lectures);
 });
 
 /* ── GET latest lecture (micro-summary) ────────────────── */
 router.get('/courses/:courseId/lectures/latest', async (req, res) => {
-  const { user_id } = req.query;
-  const uId = user_id ? parseInt(user_id, 10) : 0;
   const lecture = await queryOne(`
     SELECT * FROM lectures
-    WHERE course_id = ? AND (author_user_id = ? OR is_public = 1)
+    WHERE course_id = ?
     ORDER BY created_at DESC
     LIMIT 1
-  `, [req.params.courseId, uId]);
+  `, [req.params.courseId]);
   res.json(lecture || null);
 });
 
@@ -215,9 +211,6 @@ Return ONLY a valid JSON object.
               const regex = new RegExp(`(?<!\\\\)\\\\${word}`, 'g');
               fixed = fixed.replace(regex, `\\\\\\\\${word}`);
             }
-
-            // Remove hallucinated trailing brackets (e.g. `]\n]\n  }\n]`)
-            fixed = fixed.replace(/\][\s\]\}]*$/, ']');
 
             // 4. Sometimes LLMs output unescaped actual newlines (ASCII 10) inside string values
             // We can replace them with \n, but only inside quotes. This is complex, so let's skip for now
