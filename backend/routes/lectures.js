@@ -143,10 +143,10 @@ ABSOLUTE RULES:
 6. MULTIPLE CHOICE: For every flashcard, generate exactly 3 plausible but incorrect distractors in the 'distractors' array.
 
 OUTPUT FORMAT (Strict JSON):
-Return ONLY a valid JSON object.
+Return ONLY a valid JSON object. Do not include conversational text. Ensure all internal double quotes are escaped as \\", and use literal \\n for newlines inside strings (NO real newlines).
 
 {
-  "chunk_summary": "DO NOT SUMMARIZE. Extract each item verbatim in clear Markdown format. Use headers (e.g. ### הגדרה) or blockquotes for each item instead of technical tags like [START VERBATIM BLOCK].",
+  "chunk_summary": "DO NOT SUMMARIZE. Extract each item verbatim in clear Markdown format. Use literal \\n for line breaks, no actual enter-key newlines.",
   "flashcards": [
     {
       "front": "Question identifying the concept (e.g., 'מהי ההגדרה של מר חב מכפלה פנימית?')",
@@ -185,7 +185,13 @@ Return ONLY a valid JSON object.
 
         let aiContent = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (typeof aiContent === 'string') {
-          aiContent = aiContent.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
+          // Extract JSON object if wrapped in markdown or conversational text
+          const firstBrace = aiContent.indexOf('{');
+          const lastBrace = aiContent.lastIndexOf('}');
+          if (firstBrace !== -1 && lastBrace !== -1) {
+            aiContent = aiContent.substring(firstBrace, lastBrace + 1);
+          }
+
           try {
             return JSON.parse(aiContent);
           } catch (parseErr) {
@@ -215,7 +221,13 @@ Return ONLY a valid JSON object.
             // We can replace them with \n, but only inside quotes. This is complex, so let's skip for now
             // as the lookbehinds usually fix the primary math problems.
 
-            return JSON.parse(fixed);
+            try {
+              return JSON.parse(fixed);
+            } catch (finalParseErr) {
+              console.error('Final JSON parse failed:', finalParseErr.message);
+              console.error('Failing content snippet:', fixed.substring(0, 500));
+              throw finalParseErr;
+            }
           }
         } else {
           throw new Error('Unexpected AI response format');
@@ -229,7 +241,12 @@ Return ONLY a valid JSON object.
     };
 
     try {
-      const chunkResults = await Promise.all(textChunks.map(chunk => callGeminiWithRetry(chunk)));
+      const chunkResults = [];
+      for (const chunk of textChunks) {
+        // Process sequentially to avoid Gemini free-tier Rate Limits (429)
+        const res = await callGeminiWithRetry(chunk);
+        chunkResults.push(res);
+      }
       for (const res of chunkResults) {
         if (res && res.chunk_summary) {
           summaryParts.push(res.chunk_summary);
@@ -241,7 +258,7 @@ Return ONLY a valid JSON object.
         }
       }
     } catch (apiErr) {
-      console.error('Gemini API error after retries:', apiErr.message);
+      console.error('Gemini API error after retries:', apiErr.response?.data || apiErr.message);
       return res.status(500).json({ error: 'Failed to generate flashcards via Gemini API after multiple retries.' });
     }
     const summary = summaryParts.join('\\n\\n') || 'מצב חילוץ מקיף: סיכום ההרצאה אינו זמין בתצורה זו.';
