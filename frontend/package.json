@@ -1,0 +1,16 @@
+{
+  "name": "harshan-frontend",
+  "version": "1.0.0",
+  "description": "Vanilla JS Frontend for Harshan",
+  "scripts": {
+    "start": "npx serve .",
+    "build": "echo 'No build step required for Vanilla JS. Proceeding...'",
+    "dev": "npx serve . -p 3000"
+  },
+  "dependencies": {
+    "serve": "^14.2.0",
+    "katex": "^0.16.8",
+    "pdf-lib": "^1.17.1",
+    "marked": "latest"
+  }
+}
