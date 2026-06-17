@@ -11,7 +11,7 @@ app.use(cors({
   origin: '*' // allow all for now, to make vercel connection easy
 }));
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+// Removed static file serving
 
 // Initialize database then start server
 const { getDb } = require('./db/schema');
@@ -28,9 +28,9 @@ getDb().then(() => {
   app.use('/api', require('./routes/lectures'));
   app.use('/api', require('./routes/gamification'));
 
-  // SPA fallback
+  // API fallback
   app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.status(404).json({ error: 'API route not found' });
   });
 
   app.listen(PORT, () => {
