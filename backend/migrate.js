@@ -12,6 +12,11 @@ async function migrate() {
     execute("ALTER TABLE flashcards ADD COLUMN learning_status TEXT DEFAULT 'pending';");
   } catch(e) { console.error("Could not add learning_status:", e.message); }
 
+  try {
+    console.log("Adding degree to users...");
+    execute('ALTER TABLE users ADD COLUMN degree TEXT;');
+  } catch(e) { console.error("Could not add degree:", e.message); }
+
   console.log("Migration complete!");
 }
 

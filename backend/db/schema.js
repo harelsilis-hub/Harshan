@@ -35,6 +35,7 @@ async function getDb() {
       username TEXT UNIQUE,
       password TEXT,
       university TEXT,
+      degree TEXT,
       year INTEGER,
       semester INTEGER,
       leaderboard_name TEXT,

@@ -9,7 +9,7 @@ const client = new OAuth2Client(CLIENT_ID);
 
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
-  const { credential, university, year, semester, leaderboard_name } = req.body;
+  const { credential, university, degree, year, semester, leaderboard_name } = req.body;
   
   if (!credential) {
     return res.status(400).json({ error: 'Google credential is required' });
@@ -34,9 +34,9 @@ router.post('/login', async (req, res) => {
   let user = await queryOne('SELECT * FROM users WHERE username = ?', [cleanUsername]);
   
   if (!user) {
-    if (!university || !year || !semester || !leaderboard_name || !leaderboard_name.trim()) {
+    if (!university || !degree || !year || !semester || !leaderboard_name || !leaderboard_name.trim()) {
        return res.status(400).json({ 
-         error: 'University, year, semester, and full name are required for new users',
+         error: 'University, degree, year, semester, and full name are required for new users',
          requiresProfileCompletion: true,
          email: payload.email,
          name: payload.name
@@ -44,8 +44,8 @@ router.post('/login', async (req, res) => {
     }
     const cleanLeaderboardName = leaderboard_name.trim();
     const { lastId } = await execute(
-      'INSERT INTO users (username, password, university, year, semester, leaderboard_name) VALUES (?, ?, ?, ?, ?, ?)',
-      [cleanUsername, dummyPassword, university.trim(), parseInt(year, 10), parseInt(semester, 10), cleanLeaderboardName]
+      'INSERT INTO users (username, password, university, degree, year, semester, leaderboard_name) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [cleanUsername, dummyPassword, university.trim(), degree.trim(), parseInt(year, 10), parseInt(semester, 10), cleanLeaderboardName]
     );
     user = await queryOne('SELECT * FROM users WHERE id = ?', [lastId]);
   }
@@ -58,9 +58,9 @@ router.post('/login', async (req, res) => {
 
 // POST /api/auth/register-email
 router.post('/register-email', async (req, res) => {
-  const { email, password, university, year, semester, leaderboard_name } = req.body;
+  const { email, password, university, degree, year, semester, leaderboard_name } = req.body;
   
-  if (!email || !password || !university || !year || !semester || !leaderboard_name) {
+  if (!email || !password || !university || !degree || !year || !semester || !leaderboard_name) {
     return res.status(400).json({ error: 'All fields are required for registration.' });
   }
 
@@ -78,8 +78,8 @@ router.post('/register-email', async (req, res) => {
     const cleanLeaderboardName = leaderboard_name.trim();
 
     const { lastId } = await execute(
-      'INSERT INTO users (username, password, university, year, semester, leaderboard_name) VALUES (?, ?, ?, ?, ?, ?)',
-      [cleanUsername, hashedPassword, university.trim(), parseInt(year, 10), parseInt(semester, 10), cleanLeaderboardName]
+      'INSERT INTO users (username, password, university, degree, year, semester, leaderboard_name) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [cleanUsername, hashedPassword, university.trim(), degree.trim(), parseInt(year, 10), parseInt(semester, 10), cleanLeaderboardName]
     );
 
     user = await queryOne('SELECT * FROM users WHERE id = ?', [lastId]);

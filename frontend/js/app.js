@@ -291,6 +291,10 @@
                 <label>אוניברסיטה / מוסד לימודים</label>
                 <input class="input" id="reg-university" list="universities-list" required>
               </div>
+              <div class="form-group" style="margin-top: 1rem;">
+                <label>תואר נלמד</label>
+                <input class="input" id="reg-degree" list="degrees-list" required>
+              </div>
               <div class="form-row" style="margin-top: 1rem;">
                 <div class="form-group">
                   <label>שנת לימוד (1-7)</label>
@@ -319,6 +323,10 @@
               <div class="form-group" style="margin-top: 1rem;">
                 <label>אוניברסיטה / מוסד לימודים</label>
                 <input class="input" id="gp-university" list="universities-list" required>
+              </div>
+              <div class="form-group" style="margin-top: 1rem;">
+                <label>תואר נלמד</label>
+                <input class="input" id="gp-degree" list="degrees-list" required>
               </div>
               <div class="form-row" style="margin-top: 1rem;">
                 <div class="form-group">
@@ -358,6 +366,24 @@
             <option value="המכללה האקדמית רופין">
             <option value="המכללה האקדמית נתניה">
             <option value="בצלאל אקדמיה לאמנות ועיצוב">
+          </datalist>
+
+          <datalist id="degrees-list">
+            <option value="מדעי המחשב">
+            <option value="הנדסת תוכנה">
+            <option value="הנדסת מערכות מידע">
+            <option value="הנדסת חשמל ואלקטרוניקה">
+            <option value="רפואה">
+            <option value="משפטים">
+            <option value="כלכלה וחשבונאות">
+            <option value="מנהל עסקים">
+            <option value="פסיכולוגיה">
+            <option value="הנדסת תעשייה וניהול">
+            <option value="מדעי הנתונים">
+            <option value="ביולוגיה">
+            <option value="פיזיקה">
+            <option value="מתמטיקה">
+            <option value="תקשורת">
           </datalist>
 
         </div>
@@ -436,6 +462,7 @@
       const payload = {
         credential: pendingGoogleCredential,
         university: document.getElementById('gp-university').value.trim(),
+        degree: document.getElementById('gp-degree').value.trim(),
         year: document.getElementById('gp-year').value,
         semester: document.getElementById('gp-semester').value,
         leaderboard_name: document.getElementById('gp-name').value.trim()
@@ -475,6 +502,7 @@
         email: document.getElementById('reg-email').value.trim(),
         password: document.getElementById('reg-password').value,
         university: document.getElementById('reg-university').value.trim(),
+        degree: document.getElementById('reg-degree').value.trim(),
         year: document.getElementById('reg-year').value,
         semester: document.getElementById('reg-semester').value,
         leaderboard_name: document.getElementById('reg-name').value.trim()
@@ -1252,7 +1280,7 @@
     $app.innerHTML = `
       <div class="page-header" style="text-align:center; display:flex; flex-direction:column; align-items:center;">
         <h1 style="font-size:1.8rem;">קהילת הלמידה שלך</h1>
-        <p style="color:var(--text-secondary); margin-top:0.5rem;">${escapeHtml(currentUser.university)} · שנה ${currentUser.year} · סמסטר ${currentUser.semester}</p>
+        <p style="color:var(--text-secondary); margin-top:0.5rem;">${escapeHtml(currentUser.university)} · ${escapeHtml(currentUser.degree || 'תואר כללי')} · שנה ${currentUser.year} · סמסטר ${currentUser.semester}</p>
       </div>
 
       <div style="display:flex; gap:2rem; flex-wrap:wrap; margin-top:2rem;">

@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "prestart": "node migrate.js",
     "dev": "node --watch server.js",
     "postinstall": "npx puppeteer browsers install chrome"
   },
