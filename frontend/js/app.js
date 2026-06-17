@@ -416,6 +416,14 @@
       .catch(err => {
         console.error('Failed to pre-fetch BGU degrees:', err);
         isFetchingBgu = false;
+        
+        // Update UI to fallback to static degrees if user selected BGU
+        const regUni = document.getElementById('reg-university');
+        const gpUni = document.getElementById('gp-university');
+        if ((regUni && regUni.value.trim() === 'אוניברסיטת בן-גוריון בנגב') || 
+            (gpUni && gpUni.value.trim() === 'אוניברסיטת בן-גוריון בנגב')) {
+          populateDegrees(STATIC_DEGREES);
+        }
       });
 
     function handleUniversityChange(e) {

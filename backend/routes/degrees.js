@@ -1,23 +1,33 @@
 const express = require('express');
 const router = express.Router();
+const fs = require('fs/promises');
+const path = require('path');
 const { scrapeDegrees } = require('../scrape_degrees');
 
-let cachedDegrees = null;
-
 // GET /api/degrees/bgu
-// Scrapes BGU degrees live and returns them.
 router.get('/bgu', async (req, res) => {
   try {
-    // If you want to force live scraping every time, remove the caching.
-    // For performance, we can cache it in memory after the first live scrape.
-    // Wait, the user specifically asked: "pull the degrees live when the user in the registration"
-    // I will do it live to satisfy the request.
+    const filePath = path.join(__dirname, '../degrees.json');
+    let degrees = [];
+    
+    try {
+      // Try to read the instantly available file first
+      const data = await fs.readFile(filePath, 'utf8');
+      degrees = JSON.parse(data);
+    } catch (e) {
+      console.log('degrees.json not found, falling back to empty array temporarily');
+    }
 
-    const degrees = await scrapeDegrees();
+    // Serve whatever we have immediately so the frontend doesn't timeout!
     res.json(degrees);
+
+    // Fire off a background scrape to keep the file updated for the next request.
+    // We do NOT await this, so it doesn't block the response.
+    scrapeDegrees().catch(err => console.error('Background degree scrape failed:', err));
+
   } catch (err) {
-    console.error('Error fetching BGU degrees live:', err);
-    res.status(500).json({ error: 'Failed to scrape live degrees from BGU' });
+    console.error('Error fetching BGU degrees:', err);
+    res.status(500).json({ error: 'Failed to serve degrees' });
   }
 });
 
