@@ -28,9 +28,17 @@ getDb().then(() => {
   app.use('/api', require('./routes/lectures'));
   app.use('/api', require('./routes/gamification'));
 
+  // Serve static files from the frontend directory
+  app.use(express.static(path.join(__dirname, '../frontend')));
+
   // API fallback
-  app.get('*', (req, res) => {
+  app.all('/api/*', (req, res) => {
     res.status(404).json({ error: 'API route not found' });
+  });
+
+  // Frontend fallback (for SPA routing)
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../frontend/index.html'));
   });
 
   app.listen(PORT, () => {
