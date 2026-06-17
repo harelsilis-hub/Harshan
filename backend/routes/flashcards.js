@@ -138,34 +138,32 @@ ${combinedSummary}
         contents: [{ role: 'user', parts: [{ text: promptText }] }],
         generationConfig: {
           responseMimeType: 'application/json',
-          temperature: 0.7,
+          responseSchema: {
+            type: 'ARRAY',
+            items: {
+                type: 'OBJECT',
+                properties: {
+                  question_text: { type: 'STRING' },
+                  correct_answer: { type: 'STRING' },
+                  distractors: { type: 'ARRAY', items: { type: 'STRING' } }
+                },
+                required: ['question_text', 'correct_answer', 'distractors']
+              }
+            },
+            temperature: 0.7,
+          }
         }
-      }
-    );
+      );
 
-    let resultText = response.data.candidates[0].content.parts[0].text;
-    resultText = resultText.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
-    
-    let generatedCards;
-    try {
-      generatedCards = JSON.parse(resultText);
-    } catch (parseErr) {
-      console.log('JSON parse failed in Cram mode, attempting to fix LaTeX escaping...', parseErr.message);
-      let fixed = resultText.replace(/(?<!\\)\\(?!["\\/bfnrtu])/g, '\\\\');
-      fixed = fixed.replace(/(?<!\\)\\u(?![0-9a-fA-F]{4})/g, '\\\\u');
-      const latexWords = [
-        'frac', 'forall', 'frown',
-        'nabla', 'neq', 'nu', 'notin', 'nexists', 'nrightarrow', 'nsubseteq', 'nsupseteq', 'normal',
-        'rightarrow', 'rho', 'rangle', 'right',
-        'text', 'theta', 'times', 'triangle', 'tau', 'tilde', 'to', 'top',
-        'begin', 'beta', 'bmod', 'bar', 'bigcup', 'bigcap', 'bot', 'bullet', 'bf', 'bb'
-      ];
-      for (const word of latexWords) {
-        const regex = new RegExp(`(?<!\\\\)\\\\${word}`, 'g');
-        fixed = fixed.replace(regex, `\\\\\\\\${word}`);
+      let resultText = response.data.candidates[0].content.parts[0].text;
+      
+      let generatedCards;
+      try {
+        generatedCards = JSON.parse(resultText);
+      } catch (parseErr) {
+        console.error('JSON parse failed even with schema:', parseErr.message);
+        throw parseErr;
       }
-      generatedCards = JSON.parse(fixed);
-    }
     
     const uiCards = generatedCards.map(c => ({
       id: null,

@@ -189,7 +189,27 @@ Return ONLY a valid JSON object.
               }
             ],
             generationConfig: {
-              responseMimeType: "application/json"
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: 'OBJECT',
+                properties: {
+                  chunk_summary: { type: 'STRING' },
+                  flashcards: {
+                    type: 'ARRAY',
+                    items: {
+                      type: 'OBJECT',
+                      properties: {
+                        front: { type: 'STRING' },
+                        back: { type: 'STRING' },
+                        distractors: { type: 'ARRAY', items: { type: 'STRING' } }
+                      },
+                      required: ['front', 'back', 'distractors']
+                    }
+                  }
+                },
+                required: ['chunk_summary', 'flashcards']
+              },
+              temperature: 0.7
             }
           },
           {
@@ -202,37 +222,11 @@ Return ONLY a valid JSON object.
 
         let aiContent = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (typeof aiContent === 'string') {
-          aiContent = aiContent.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
           try {
             return JSON.parse(aiContent);
           } catch (parseErr) {
-            console.log('JSON parse failed, attempting to fix LaTeX escaping...', parseErr.message);
-
-            // 1. Escape any single backslash that isn't followed by a valid JSON escape char
-            // We use lookbehind (?<!\\) to ensure we don't match a backslash that is already escaped
-            let fixed = aiContent.replace(/(?<!\\)\\(?!["\\/bfnrtu])/g, '\\\\');
-
-            // 2. Escape \u if it is NOT followed by 4 hex digits (e.g. \underbrace)
-            fixed = fixed.replace(/(?<!\\)\\u(?![0-9a-fA-F]{4})/g, '\\\\u');
-
-            // 3. Escape common LaTeX macros that happen to start with valid JSON escape characters
-            const latexWords = [
-              'frac', 'forall', 'frown',
-              'nabla', 'neq', 'nu', 'notin', 'nexists', 'nrightarrow', 'nsubseteq', 'nsupseteq', 'normal',
-              'rightarrow', 'rho', 'rangle', 'right',
-              'text', 'theta', 'times', 'triangle', 'tau', 'tilde', 'to', 'top',
-              'begin', 'beta', 'bmod', 'bar', 'bigcup', 'bigcap', 'bot', 'bullet', 'bf', 'bb'
-            ];
-            for (const word of latexWords) {
-              const regex = new RegExp(`(?<!\\\\)\\\\${word}`, 'g');
-              fixed = fixed.replace(regex, `\\\\\\\\${word}`);
-            }
-
-            // 4. Sometimes LLMs output unescaped actual newlines (ASCII 10) inside string values
-            // We can replace them with \n, but only inside quotes. This is complex, so let's skip for now
-            // as the lookbehinds usually fix the primary math problems.
-
-            return JSON.parse(fixed);
+            console.error('JSON parse failed even with schema:', parseErr.message);
+            throw parseErr;
           }
         } else {
           throw new Error('Unexpected AI response format: ' + JSON.stringify(response.data));
