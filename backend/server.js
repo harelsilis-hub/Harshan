@@ -23,13 +23,13 @@ getDb().then(() => {
 
   // Routes
   app.use('/api/auth', require('./routes/auth'));
+  app.use('/api/degrees', require('./routes/degrees'));
   app.use('/api/semesters', require('./routes/semesters'));
   app.use('/api/courses', require('./routes/courses'));
   app.use('/api/calendar', require('./routes/calendar'));
   app.use('/api', require('./routes/flashcards'));
   app.use('/api', require('./routes/lectures'));
   app.use('/api', require('./routes/gamification'));
-  app.use('/api/degrees', require('./routes/degrees'));
 
   // Serve static files from the frontend directory
   app.use(express.static(path.join(__dirname, '../frontend')));
