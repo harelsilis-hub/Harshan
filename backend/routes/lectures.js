@@ -245,7 +245,10 @@ Return ONLY a valid JSON object.
       }
     } catch (apiErr) {
       console.error('Gemini API outer catch error:', apiErr.response?.data || apiErr.message);
-      return res.status(500).json({ error: 'Failed to generate flashcards via Gemini API after multiple retries.' });
+      return res.status(500).json({ 
+        error: 'Failed to generate flashcards via Gemini API after multiple retries.',
+        details: apiErr.response?.data || apiErr.message
+      });
     }
     const summary = summaryParts.join('\\n\\n') || 'מצב חילוץ מקיף: סיכום ההרצאה אינו זמין בתצורה זו.';
 
