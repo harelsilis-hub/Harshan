@@ -126,8 +126,10 @@ Source Material:
 ${combinedSummary}
 `;
 
+    const keys = [process.env.GEMINI_API_KEY1, process.env.GEMINI_API_KEY2, process.env.GEMINI_API_KEY].filter(Boolean);
+    const randomKey = keys[Math.floor(Math.random() * keys.length)];
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${randomKey}`,
       {
         contents: [{ role: 'user', parts: [{ text: promptText }] }],
         generationConfig: {
