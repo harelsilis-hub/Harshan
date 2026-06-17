@@ -8,7 +8,8 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors({
-  origin: '*' // allow all for now, to make vercel connection easy
+  origin: ['http://localhost:3000', 'http://localhost:5173', 'https://harshan.tools.hub02.com'],
+  credentials: true
 }));
 app.use(express.json());
 // Removed static file serving
