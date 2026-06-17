@@ -5,21 +5,25 @@ const { queryAll, queryOne, execute } = require('../db/schema');
 
 // GET /api/courses/:courseId/due — due flashcards for a course
 router.get('/courses/:courseId/due', async (req, res) => {
+  const { user_id } = req.query;
+  const uId = user_id ? parseInt(user_id, 10) : 0;
   const cards = await queryAll(`
     SELECT f.*, l.title AS lecture_title, l.summary_content AS lecture_summary
     FROM flashcards f
     JOIN lectures l ON f.lecture_id = l.id
-    WHERE f.course_id = ?
+    WHERE f.course_id = ? AND (f.author_user_id = ? OR f.is_public = 1)
       AND f.learning_status = 'active'
       AND f.next_review_date <= datetime('now')
     ORDER BY f.next_review_date ASC
-  `, [req.params.courseId]);
+  `, [req.params.courseId, uId]);
   res.json(cards);
 });
 
 // POST /api/courses/:courseId/drip-feed — unlock N flashcards into active learning
 router.post('/courses/:courseId/drip-feed', async (req, res) => {
   const limitParam = req.body.limit;
+  const user_id = req.body.user_id;
+  const uId = user_id ? parseInt(user_id, 10) : 0;
   let limit = 15;
   if (limitParam === 'ALL') {
     limit = 999999;
@@ -29,10 +33,10 @@ router.post('/courses/:courseId/drip-feed', async (req, res) => {
 
   const pendingCards = await queryAll(`
     SELECT id FROM flashcards
-    WHERE course_id = ? AND learning_status = 'pending'
+    WHERE course_id = ? AND learning_status = 'pending' AND (author_user_id = ? OR is_public = 1)
     ORDER BY appearance_index ASC
     LIMIT ?
-  `, [req.params.courseId, limit]);
+  `, [req.params.courseId, uId, limit]);
 
   if (pendingCards.length === 0) {
     return res.json({ unlocked: 0, cards: [] });
@@ -60,27 +64,31 @@ router.post('/courses/:courseId/drip-feed', async (req, res) => {
 
 // GET /api/courses/:courseId/flashcards — all flashcards (for stats)
 router.get('/courses/:courseId/flashcards', async (req, res) => {
+  const { user_id } = req.query;
+  const uId = user_id ? parseInt(user_id, 10) : 0;
   const cards = await queryAll(`
     SELECT f.*, l.title AS lecture_title, l.summary_content AS lecture_summary
     FROM flashcards f
     JOIN lectures l ON f.lecture_id = l.id
-    WHERE f.course_id = ?
+    WHERE f.course_id = ? AND (f.author_user_id = ? OR f.is_public = 1)
     ORDER BY f.next_review_date ASC
-  `, [req.params.courseId]);
+  `, [req.params.courseId, uId]);
   res.json(cards);
 });
 
 // GET /api/courses/:courseId/cram — Ghost Review Engine (Hardest 50 Active Cards)
 router.get('/courses/:courseId/cram', async (req, res) => {
+  const { user_id } = req.query;
+  const uId = user_id ? parseInt(user_id, 10) : 0;
   const cards = await queryAll(`
     SELECT f.*, l.title AS lecture_title, l.summary_content AS lecture_summary
     FROM flashcards f
     JOIN lectures l ON f.lecture_id = l.id
-    WHERE f.course_id = ?
+    WHERE f.course_id = ? AND (f.author_user_id = ? OR f.is_public = 1)
       AND f.learning_status IN ('active', 'pending')
     ORDER BY f.easiness_factor ASC
     LIMIT 50
-  `, [req.params.courseId]);
+  `, [req.params.courseId, uId]);
   res.json(cards);
 });
 
@@ -88,13 +96,15 @@ router.get('/courses/:courseId/cram', async (req, res) => {
 router.post('/courses/:courseId/cram-generate', async (req, res) => {
   try {
     const courseId = req.params.courseId;
+    const user_id = req.body.user_id;
+    const uId = user_id ? parseInt(user_id, 10) : 0;
     
     // Fetch up to 3 lecture summaries for context
     const lectures = await queryAll(`
       SELECT summary_content FROM lectures
-      WHERE course_id = ? AND summary_content IS NOT NULL
+      WHERE course_id = ? AND summary_content IS NOT NULL AND (author_user_id = ? OR is_public = 1)
       ORDER BY RANDOM() LIMIT 3
-    `, [courseId]);
+    `, [courseId, uId]);
 
     if (lectures.length === 0) {
       return res.json([]);
