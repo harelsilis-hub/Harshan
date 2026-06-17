@@ -192,20 +192,21 @@ router.post('/flashcards/:id/review', async (req, res) => {
   let { easiness_factor, interval, repetitions } = card;
   const q = parseInt(quality, 10);
 
-  if (q >= 3) {
+  if (q >= 1) {
     // Successful recall
     if (repetitions === 0)      interval = 1;
     else if (repetitions === 1) interval = 6;
     else                        interval = Math.round(interval * easiness_factor);
     repetitions += 1;
+    easiness_factor += 0.1;
   } else {
     // Failed recall — reset
     repetitions = 0;
     interval = 1;
+    easiness_factor -= 0.2;
   }
 
   // Easiness factor update
-  easiness_factor += 0.1 - (5 - q) * (0.08 + (5 - q) * 0.02);
   easiness_factor = Math.max(1.3, easiness_factor);
 
   // Next review date

@@ -1494,7 +1494,6 @@
             </div>
             <div class="question-text markdown-body" dir="auto" style="margin-bottom: 1.5rem;">${renderMarkdown(card.question_text)}</div>
             
-            ${isMCQ ? `
             <ul class="options-list">
               ${options.map((opt, i) => `
                 <li>
@@ -1505,24 +1504,6 @@
                 </li>
               `).join('')}
             </ul>
-            ` : `
-            <div class="flashcard-ui" style="text-align: center;">
-              <button class="btn btn-primary" id="btn-reveal-answer" style="width: 100%; padding: 1rem; font-size: 1.1rem;">הצג תשובה</button>
-              <div id="flashcard-answer-slot" style="display: none; margin-top: 1.5rem; border-top: 1px solid var(--border); padding-top: 1.5rem;">
-                <h4 style="margin-bottom: 1rem; color: var(--text-secondary);">תשובה נכונה:</h4>
-                <div class="markdown-body answer-reveal-box" dir="auto" style="font-size: 1.1rem; margin-bottom: 2rem; background: var(--bg-secondary); padding: 1rem; border-radius: 8px;">
-                  ${renderMarkdown(card.correct_answer)}
-                </div>
-                <h4 style="margin-bottom: 1rem; color: var(--text-secondary);">עד כמה ידעת את התשובה?</h4>
-                <div class="sm2-buttons" style="display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap;">
-                  <button class="btn sm2-btn" style="background: var(--error); color: white; flex:1;" data-quality="1">שכחתי (1)</button>
-                  <button class="btn sm2-btn" style="background: var(--warning); color: black; flex:1;" data-quality="3">קשה (3)</button>
-                  <button class="btn sm2-btn" style="background: var(--primary); color: white; flex:1;" data-quality="4">טוב (4)</button>
-                  <button class="btn sm2-btn" style="background: var(--success); color: white; flex:1;" data-quality="5">קל (5)</button>
-                </div>
-              </div>
-            </div>
-            `}
             <div id="feedback-slot"></div>
           </div>
         `;
@@ -1534,82 +1515,44 @@
           });
         }
 
-        if (isMCQ) {
-          container.querySelectorAll('.option-btn').forEach((btn) => {
-            btn.addEventListener('click', () => handleAnswer(card, btn, container, true));
-          });
-        } else {
-          const revealBtn = container.querySelector('#btn-reveal-answer');
-          const answerSlot = container.querySelector('#flashcard-answer-slot');
-          revealBtn.addEventListener('click', () => {
-            revealBtn.style.display = 'none';
-            answerSlot.style.display = 'block';
-          });
-          container.querySelectorAll('.sm2-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-              const quality = parseInt(btn.dataset.quality, 10);
-              handleAnswer(card, null, container, false, quality);
-            });
-          });
-        }
+        container.querySelectorAll('.option-btn').forEach((btn) => {
+          btn.addEventListener('click', () => handleAnswer(card, btn, container, true));
+        });
       }
 
       async function handleAnswer(card, selectedBtn, container, isMCQ, manualQuality = null) {
-        let quality = manualQuality;
-        let isCorrect = quality ? quality >= 3 : false;
+        const allBtns = container.querySelectorAll('.option-btn');
+        allBtns.forEach((b) => b.classList.add('disabled'));
 
-        if (isMCQ) {
-          const allBtns = container.querySelectorAll('.option-btn');
-          allBtns.forEach((b) => b.classList.add('disabled'));
+        const isCorrect = selectedBtn.dataset.correct === 'true';
+        const quality = isCorrect ? 1 : 0;
 
-          isCorrect = selectedBtn.dataset.correct === 'true';
-          quality = isCorrect ? 5 : 1;
-
-          if (isCorrect) {
-            selectedBtn.classList.add('correct');
-          } else {
-            selectedBtn.classList.add('incorrect');
-            allBtns.forEach((b) => {
-              if (b.dataset.correct === 'true') b.classList.add('reveal-correct');
-            });
-          }
+        if (isCorrect) {
+          selectedBtn.classList.add('correct');
         } else {
-          container.querySelectorAll('.sm2-btn').forEach(b => b.classList.add('disabled'));
+          selectedBtn.classList.add('incorrect');
+          allBtns.forEach((b) => {
+            if (b.dataset.correct === 'true') b.classList.add('reveal-correct');
+          });
         }
 
         const feedbackSlot = document.getElementById('feedback-slot');
-        if (isMCQ) {
-          feedbackSlot.innerHTML = `
-            <div class="feedback-area ${isCorrect ? 'feedback-correct' : 'feedback-incorrect'}">
-              <span class="feedback-icon">${isCorrect ? '🎯' : '❌'}</span>
-              <div class="feedback-text">
-                ${isCorrect
-                  ? '<strong>נכון!</strong> זיכרון מצוין.'
-                  : `<strong>לא נכון.</strong> התשובה הנכונה היא: <div class="markdown-body" style="display:inline-block; vertical-align:top;">${renderMarkdown(card.correct_answer)}</div>`
-                }
-              </div>
+        feedbackSlot.innerHTML = `
+          <div class="feedback-area ${isCorrect ? 'feedback-correct' : 'feedback-incorrect'}">
+            <span class="feedback-icon">${isCorrect ? '🎯' : '❌'}</span>
+            <div class="feedback-text">
+              ${isCorrect
+                ? '<strong>נכון!</strong> זיכרון מצוין.'
+                : `<strong>לא נכון.</strong> התשובה הנכונה היא: <div class="markdown-body" style="display:inline-block; vertical-align:top;">${renderMarkdown(card.correct_answer)}</div>`
+              }
             </div>
-            <div style="text-align:right; margin-top:1rem;">
-              <button class="btn btn-primary" id="btn-next-card">
-                ${currentIndex + 1 < totalכרטיסיות ? 'שאלה הבאה →' : (isCramMode ? 'סיים חרישה ✓' : 'המשך לסיכום →')}
-              </button>
-            </div>
-          `;
-        } else {
-          feedbackSlot.innerHTML = `
-            <div class="feedback-area ${isCorrect ? 'feedback-correct' : 'feedback-incorrect'}">
-              <span class="feedback-icon">${isCorrect ? '🎯' : '💪'}</span>
-              <div class="feedback-text">
-                נשמר בזיכרון. (דירוג: ${quality})
-              </div>
-            </div>
-            <div style="text-align:right; margin-top:1rem;">
-              <button class="btn btn-primary" id="btn-next-card">
-                ${currentIndex + 1 < totalכרטיסיות ? 'שאלה הבאה →' : (isCramMode ? 'סיים חרישה ✓' : 'המשך לסיכום →')}
-              </button>
-            </div>
-          `;
-        }
+          </div>
+          <div style="text-align:right; margin-top:1rem;">
+            <button class="btn btn-primary" id="btn-next-card">
+              ${currentIndex + 1 < totalכרטיסיות ? 'שאלה הבאה →' : (isCramMode ? 'סיים חרישה ✓' : 'המשך לסיכום →')}
+            </button>
+          </div>
+        `;
 
         try {
           if (card.id) {
@@ -1711,7 +1654,6 @@
             </div>
             <div class="question-text markdown-body" dir="auto" style="margin-bottom: 1.5rem;">${renderMarkdown(card.question_text)}</div>
             
-            ${isMCQ ? `
             <ul class="options-list">
               ${options.map((opt, i) => `
                 <li>
@@ -1722,24 +1664,6 @@
                 </li>
               `).join('')}
             </ul>
-            ` : `
-            <div class="flashcard-ui" style="text-align: center;">
-              <button class="btn btn-primary" id="btn-reveal-answer" style="width: 100%; padding: 1rem; font-size: 1.1rem;">הצג תשובה</button>
-              <div id="flashcard-answer-slot" style="display: none; margin-top: 1.5rem; border-top: 1px solid var(--border); padding-top: 1.5rem;">
-                <h4 style="margin-bottom: 1rem; color: var(--text-secondary);">תשובה נכונה:</h4>
-                <div class="markdown-body answer-reveal-box" dir="auto" style="font-size: 1.1rem; margin-bottom: 2rem; background: var(--bg-secondary); padding: 1rem; border-radius: 8px;">
-                  ${renderMarkdown(card.correct_answer)}
-                </div>
-                <h4 style="margin-bottom: 1rem; color: var(--text-secondary);">עד כמה ידעת את התשובה?</h4>
-                <div class="sm2-buttons" style="display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap;">
-                  <button class="btn sm2-btn" style="background: var(--error); color: white; flex:1;" data-quality="1">שכחתי (1)</button>
-                  <button class="btn sm2-btn" style="background: var(--warning); color: black; flex:1;" data-quality="3">קשה (3)</button>
-                  <button class="btn sm2-btn" style="background: var(--primary); color: white; flex:1;" data-quality="4">טוב (4)</button>
-                  <button class="btn sm2-btn" style="background: var(--success); color: white; flex:1;" data-quality="5">קל (5)</button>
-                </div>
-              </div>
-            </div>
-            `}
             <div id="feedback-slot"></div>
           </div>
         `;
@@ -1751,47 +1675,25 @@
           });
         }
 
-        if (isMCQ) {
-          container.querySelectorAll('.option-btn').forEach((btn) => {
-            btn.addEventListener('click', () => handleAnswer(card, btn, container, true));
-          });
-        } else {
-          const revealBtn = container.querySelector('#btn-reveal-answer');
-          const answerSlot = container.querySelector('#flashcard-answer-slot');
-          revealBtn.addEventListener('click', () => {
-            revealBtn.style.display = 'none';
-            answerSlot.style.display = 'block';
-          });
-          container.querySelectorAll('.sm2-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-              const quality = parseInt(btn.dataset.quality, 10);
-              handleAnswer(card, null, container, false, quality);
-            });
-          });
-        }
+        container.querySelectorAll('.option-btn').forEach((btn) => {
+          btn.addEventListener('click', () => handleAnswer(card, btn, container, true));
+        });
       }
 
       async function handleAnswer(card, selectedBtn, container, isMCQ, manualQuality = null) {
-        let quality = manualQuality;
-        let isCorrect = quality ? quality >= 3 : false;
+        const allBtns = container.querySelectorAll('.option-btn');
+        allBtns.forEach((b) => b.classList.add('disabled'));
 
-        if (isMCQ) {
-          const allBtns = container.querySelectorAll('.option-btn');
-          allBtns.forEach((b) => b.classList.add('disabled'));
+        const isCorrect = selectedBtn.dataset.correct === 'true';
+        const quality = isCorrect ? 1 : 0;
 
-          isCorrect = selectedBtn.dataset.correct === 'true';
-          quality = isCorrect ? 5 : 1;
-
-          if (isCorrect) {
-            selectedBtn.classList.add('correct');
-          } else {
-            selectedBtn.classList.add('incorrect');
-            allBtns.forEach((b) => {
-              if (b.dataset.correct === 'true') b.classList.add('reveal-correct');
-            });
-          }
+        if (isCorrect) {
+          selectedBtn.classList.add('correct');
         } else {
-          container.querySelectorAll('.sm2-btn').forEach((b) => b.classList.add('disabled'));
+          selectedBtn.classList.add('incorrect');
+          allBtns.forEach((b) => {
+            if (b.dataset.correct === 'true') b.classList.add('reveal-correct');
+          });
         }
 
         const feedbackSlot = document.getElementById('feedback-slot');

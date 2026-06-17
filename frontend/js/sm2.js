@@ -14,9 +14,8 @@
 
 function sm2(card, quality) {
   let { easiness_factor, interval, repetitions } = card;
-  const q = Math.round(Math.max(0, Math.min(5, quality)));
 
-  if (q >= 3) {
+  if (quality >= 1) {
     // Successful recall
     if (repetitions === 0) {
       interval = 1;
@@ -26,14 +25,15 @@ function sm2(card, quality) {
       interval = Math.round(interval * easiness_factor);
     }
     repetitions += 1;
+    easiness_factor += 0.1;
   } else {
     // Failed recall — reset
     repetitions = 0;
     interval = 1;
+    easiness_factor -= 0.2;
   }
 
-  // Update easiness factor
-  easiness_factor += 0.1 - (5 - q) * (0.08 + (5 - q) * 0.02);
+  // Update easiness factor with hard limit
   easiness_factor = Math.max(1.3, easiness_factor);
 
   // Next review date
