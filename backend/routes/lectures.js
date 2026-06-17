@@ -218,10 +218,13 @@ Return ONLY a valid JSON object.
             return JSON.parse(fixed);
           }
         } else {
-          throw new Error('Unexpected AI response format');
+          throw new Error('Unexpected AI response format: ' + JSON.stringify(response.data));
         }
       } catch (err) {
-        if (attempt >= 3) throw err;
+        if (attempt >= 3) {
+          console.error(`Gemini API failed on chunk (Attempt 3). Error details:`, err.response?.data || err.message);
+          throw err;
+        }
         const delay = Math.pow(2, attempt) * 1000;
         await new Promise(r => setTimeout(r, delay));
         return callGeminiWithRetry(chunkText, attempt + 1);
@@ -241,7 +244,7 @@ Return ONLY a valid JSON object.
         }
       }
     } catch (apiErr) {
-      console.error('Gemini API error after retries:', apiErr.message);
+      console.error('Gemini API outer catch error:', apiErr.response?.data || apiErr.message);
       return res.status(500).json({ error: 'Failed to generate flashcards via Gemini API after multiple retries.' });
     }
     const summary = summaryParts.join('\\n\\n') || 'מצב חילוץ מקיף: סיכום ההרצאה אינו זמין בתצורה זו.';

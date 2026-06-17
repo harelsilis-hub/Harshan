@@ -174,7 +174,7 @@ ${combinedSummary}
 
     res.json(uiCards);
   } catch (err) {
-    console.error('Cram generation error:', err.response?.data || err.message);
+    console.error('Cram generation error details:', err.response?.data || err.message);
     res.status(500).json({ error: 'Failed to generate cram questions.' });
   }
 });
