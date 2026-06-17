@@ -10,7 +10,7 @@ env:
   # Fallback only for safety during tests.
   CF_PAGES_PROJECT: ${{ vars.CF_PAGES_PROJECT || 'test' }}
   # Hub02 finalize endpoint and job ID
-  HUB02_PUBLISH_JOB_ID: "2119f8ba-2640-4c29-8bce-f141425f59b2"
+  HUB02_PUBLISH_JOB_ID: "ffc91e46-a3ae-423c-8bdb-addfc07c1733"
   HUB02_PUBLISH_FINALIZE_URL: "https://ddeubhasvmeqwtzgkunt.supabase.co/functions/v1/publish-worker"
 
 jobs:
