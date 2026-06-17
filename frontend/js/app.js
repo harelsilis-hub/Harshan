@@ -241,6 +241,7 @@
           <!-- Login View -->
           <div id="login-view">
             <div id="google-btn-login-container" style="display:flex; justify-content:center; margin-top: 1rem; opacity: 0.5; pointer-events: none; filter: grayscale(100%);" title="Google Login is temporarily disabled"></div>
+            <p style="text-align: center; font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.5rem; opacity: 0.8;">ההתחברות כרגע מאופשרת רק על ידי אימייל וסיסמא עקב מגבלות ההאקטון</p>
             
             <div class="divider" style="margin: 1.5rem 0; text-align: center; color: var(--text-secondary); font-size: 0.9rem; position: relative;">
                <span style="background: var(--bg-card); padding: 0 10px; position: relative; z-index: 1;">או באמצעות אימייל</span>
@@ -266,6 +267,7 @@
           <!-- Register View -->
           <div id="register-view" style="display: none;">
             <div id="google-btn-register-container" style="display:flex; justify-content:center; margin-top: 1rem; opacity: 0.5; pointer-events: none; filter: grayscale(100%);" title="Google Login is temporarily disabled"></div>
+            <p style="text-align: center; font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.5rem; opacity: 0.8;">ההתחברות כרגע מאופשרת רק על ידי אימייל וסיסמא עקב מגבלות ההאקטון</p>
             
             <div class="divider" style="margin: 1.5rem 0; text-align: center; color: var(--text-secondary); font-size: 0.9rem; position: relative;">
                <span style="background: var(--bg-card); padding: 0 10px; position: relative; z-index: 1;">או הרשמה באימייל</span>
