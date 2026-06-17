@@ -1,4 +1,4 @@
-process.env.PLAYWRIGHT_BROWSERS_PATH = '0';
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -29,6 +29,7 @@ getDb().then(() => {
   app.use('/api', require('./routes/flashcards'));
   app.use('/api', require('./routes/lectures'));
   app.use('/api', require('./routes/gamification'));
+  app.use('/api/degrees', require('./routes/degrees'));
 
   // Serve static files from the frontend directory
   app.use(express.static(path.join(__dirname, '../frontend')));

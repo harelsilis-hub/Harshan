@@ -369,26 +369,70 @@
           </datalist>
 
           <datalist id="degrees-list">
-            <option value="מדעי המחשב">
-            <option value="הנדסת תוכנה">
-            <option value="הנדסת מערכות מידע">
-            <option value="הנדסת חשמל ואלקטרוניקה">
-            <option value="רפואה">
-            <option value="משפטים">
-            <option value="כלכלה וחשבונאות">
-            <option value="מנהל עסקים">
-            <option value="פסיכולוגיה">
-            <option value="הנדסת תעשייה וניהול">
-            <option value="מדעי הנתונים">
-            <option value="ביולוגיה">
-            <option value="פיזיקה">
-            <option value="מתמטיקה">
-            <option value="תקשורת">
+            <!-- Populated dynamically from degrees.json -->
           </datalist>
 
         </div>
       </div>
     `;
+
+    // Fetch and populate degrees dynamically
+    const STATIC_DEGREES = [
+      "מדעי המחשב", "הנדסת תוכנה", "הנדסת מערכות מידע", "הנדסת חשמל ואלקטרוניקה",
+      "רפואה", "משפטים", "כלכלה וחשבונאות", "מנהל עסקים", "פסיכולוגיה",
+      "הנדסת תעשייה וניהול", "מדעי הנתונים", "ביולוגיה", "פיזיקה", "מתמטיקה", "תקשורת"
+    ];
+
+    function populateDegrees(degreesArray) {
+      const list = document.getElementById('degrees-list');
+      if (!list) return;
+      list.innerHTML = degreesArray.map(d => `<option value="${d}">`).join('');
+    }
+
+    // Load default static list
+    populateDegrees(STATIC_DEGREES);
+
+    let cachedBguDegrees = null;
+    let isFetchingBgu = true;
+
+    // Pre-fetch BGU data in the background
+    api('/degrees/bgu')
+      .then(degrees => {
+        cachedBguDegrees = degrees.map(d => d.name);
+        isFetchingBgu = false;
+        // If the user already selected BGU, update the list immediately
+        const regUni = document.getElementById('reg-university');
+        const gpUni = document.getElementById('gp-university');
+        if ((regUni && regUni.value.trim() === 'אוניברסיטת בן-גוריון בנגב') || 
+            (gpUni && gpUni.value.trim() === 'אוניברסיטת בן-גוריון בנגב')) {
+          populateDegrees(cachedBguDegrees);
+        }
+      })
+      .catch(err => {
+        console.error('Failed to pre-fetch BGU degrees:', err);
+        isFetchingBgu = false;
+      });
+
+    function handleUniversityChange(e) {
+      const university = e.target.value.trim();
+      const list = document.getElementById('degrees-list');
+      
+      if (university === 'אוניברסיטת בן-גוריון בנגב') {
+        if (cachedBguDegrees) {
+          populateDegrees(cachedBguDegrees);
+        } else if (isFetchingBgu) {
+          if (list) list.innerHTML = '<option value="טוען נתונים מבן-גוריון...">';
+        } else {
+          populateDegrees(STATIC_DEGREES);
+        }
+      } else {
+        populateDegrees(STATIC_DEGREES);
+      }
+    }
+
+    // Attach listeners
+    document.getElementById('reg-university')?.addEventListener('input', handleUniversityChange);
+    document.getElementById('gp-university')?.addEventListener('input', handleUniversityChange);
 
     // View Toggles
     document.getElementById('link-to-register').addEventListener('click', (e) => {
