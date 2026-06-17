@@ -216,6 +216,9 @@ Return ONLY a valid JSON object.
               fixed = fixed.replace(regex, `\\\\\\\\${word}`);
             }
 
+            // Remove hallucinated trailing brackets (e.g. `]\n]\n  }\n]`)
+            fixed = fixed.replace(/\][\s\]\}]*$/, ']');
+
             // 4. Sometimes LLMs output unescaped actual newlines (ASCII 10) inside string values
             // We can replace them with \n, but only inside quotes. This is complex, so let's skip for now
             // as the lookbehinds usually fix the primary math problems.

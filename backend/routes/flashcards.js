@@ -159,6 +159,7 @@ ${combinedSummary}
       console.log('JSON parse failed in Cram mode, attempting to fix LaTeX escaping...', parseErr.message);
       let fixed = resultText.replace(/(?<!\\)\\(?!["\\/bfnrtu])/g, '\\\\');
       fixed = fixed.replace(/(?<!\\)\\u(?![0-9a-fA-F]{4})/g, '\\\\u');
+      // Fix valid JSON escapes that were actually meant to be LaTeX (e.g. \to -> \\to, \frac -> \\frac)
       const latexWords = [
         'frac', 'forall', 'frown',
         'nabla', 'neq', 'nu', 'notin', 'nexists', 'nrightarrow', 'nsubseteq', 'nsupseteq', 'normal',
@@ -170,6 +171,8 @@ ${combinedSummary}
         const regex = new RegExp(`(?<!\\\\)\\\\${word}`, 'g');
         fixed = fixed.replace(regex, `\\\\\\\\${word}`);
       }
+      // Remove hallucinated trailing brackets (e.g. `]\n]\n  }\n]`)
+      fixed = fixed.replace(/\][\s\]\}]*$/, ']');
       generatedCards = JSON.parse(fixed);
     }
     
