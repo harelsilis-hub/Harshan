@@ -30,7 +30,7 @@ router.post('/login', async (req, res) => {
   const dummyPassword = 'google-auth'; // We no longer use passwords
 
   // check if user exists
-  let user = queryOne('SELECT * FROM users WHERE username = ?', [cleanUsername]);
+  let user = await queryOne('SELECT * FROM users WHERE username = ?', [cleanUsername]);
   
   if (!user) {
     if (!university || !year || !semester || !leaderboard_name || !leaderboard_name.trim()) {
@@ -42,11 +42,11 @@ router.post('/login', async (req, res) => {
        });
     }
     const cleanLeaderboardName = leaderboard_name.trim();
-    const { lastId } = execute(
+    const { lastId } = await execute(
       'INSERT INTO users (username, password, university, year, semester, leaderboard_name) VALUES (?, ?, ?, ?, ?, ?)',
       [cleanUsername, dummyPassword, university.trim(), parseInt(year, 10), parseInt(semester, 10), cleanLeaderboardName]
     );
-    user = queryOne('SELECT * FROM users WHERE id = ?', [lastId]);
+    user = await queryOne('SELECT * FROM users WHERE id = ?', [lastId]);
   }
   
   // Remove password from response

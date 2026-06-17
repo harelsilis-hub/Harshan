@@ -1,0 +1,14 @@
+{
+  "buildCommand": "echo 'No build command'",
+  "outputDirectory": "public",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://<YOUR_RENDER_URL>.onrender.com/api/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

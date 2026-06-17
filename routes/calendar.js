@@ -5,14 +5,14 @@ const { extractMoodleCalendarUrl, fetchAndParseIcs } = require('../moodle_ical_e
 
 // GET /api/calendar
 // Fetch private events for a user
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const { user_id } = req.query;
   
   if (!user_id) {
     return res.status(400).json({ error: 'user_id query param is required' });
   }
 
-  const events = queryAll(`
+  const events = await queryAll(`
     SELECT * FROM calendar_events 
     WHERE user_id = ?
     ORDER BY event_date ASC
@@ -77,15 +77,15 @@ router.post('/sync-moodle', async (req, res) => {
         if (!eventDate || !title) continue;
 
         // Check for duplicates
-        const existing = queryOne('SELECT id, moodle_course_id FROM calendar_events WHERE user_id = ? AND title = ? AND event_date = ?', [user_id, title, eventDate]);
+        const existing = await queryOne('SELECT id, moodle_course_id FROM calendar_events WHERE user_id = ? AND title = ? AND event_date = ?', [user_id, title, eventDate]);
         if (!existing) {
-          execute(`
+          await execute(`
             INSERT INTO calendar_events (user_id, moodle_course_id, title, event_date)
             VALUES (?, ?, ?, ?)
           `, [parseInt(user_id, 10), moodleCourseId, title, eventDate]);
           addedCount++;
         } else if (existing.moodle_course_id !== moodleCourseId) {
-          execute(`
+          await execute(`
             UPDATE calendar_events SET moodle_course_id = ? WHERE id = ?
           `, [moodleCourseId, existing.id]);
         }
@@ -104,12 +104,12 @@ router.post('/sync-moodle', async (req, res) => {
 
 // PUT /api/calendar/:id/toggle
 // Toggle the completion status of an event
-router.put('/:id/toggle', (req, res) => {
+router.put('/:id/toggle', async (req, res) => {
   const { id } = req.params;
   const { is_completed } = req.body;
   
   try {
-    execute('UPDATE calendar_events SET is_completed = ? WHERE id = ?', [is_completed ? 1 : 0, id]);
+    await execute('UPDATE calendar_events SET is_completed = ? WHERE id = ?', [is_completed ? 1 : 0, id]);
     res.json({ success: true, is_completed: is_completed ? 1 : 0 });
   } catch (error) {
     console.error('Failed to toggle event status:', error);

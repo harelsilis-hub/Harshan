@@ -4,8 +4,8 @@ const axios = require('axios');
 const { queryAll, queryOne, execute } = require('../db/schema');
 
 // GET /api/courses/:courseId/due — due flashcards for a course
-router.get('/courses/:courseId/due', (req, res) => {
-  const cards = queryAll(`
+router.get('/courses/:courseId/due', async (req, res) => {
+  const cards = await queryAll(`
     SELECT f.*, l.title AS lecture_title, l.summary_content AS lecture_summary
     FROM flashcards f
     JOIN lectures l ON f.lecture_id = l.id
@@ -18,7 +18,7 @@ router.get('/courses/:courseId/due', (req, res) => {
 });
 
 // POST /api/courses/:courseId/drip-feed — unlock N flashcards into active learning
-router.post('/courses/:courseId/drip-feed', (req, res) => {
+router.post('/courses/:courseId/drip-feed', async (req, res) => {
   const limitParam = req.body.limit;
   let limit = 15;
   if (limitParam === 'ALL') {
@@ -27,7 +27,7 @@ router.post('/courses/:courseId/drip-feed', (req, res) => {
     limit = parseInt(limitParam, 10);
   }
 
-  const pendingCards = queryAll(`
+  const pendingCards = await queryAll(`
     SELECT id FROM flashcards
     WHERE course_id = ? AND learning_status = 'pending'
     ORDER BY appearance_index ASC
@@ -41,13 +41,13 @@ router.post('/courses/:courseId/drip-feed', (req, res) => {
   const ids = pendingCards.map(c => c.id);
   const placeholders = ids.map(() => '?').join(',');
   
-  execute(`
+  await execute(`
     UPDATE flashcards
     SET learning_status = 'active', next_review_date = datetime('now'), interval = 0, repetitions = 0
     WHERE id IN (${placeholders})
   `, ids);
 
-  const unlockedCards = queryAll(`
+  const unlockedCards = await queryAll(`
     SELECT f.*, l.title AS lecture_title, l.summary_content AS lecture_summary
     FROM flashcards f
     JOIN lectures l ON f.lecture_id = l.id
@@ -59,8 +59,8 @@ router.post('/courses/:courseId/drip-feed', (req, res) => {
 });
 
 // GET /api/courses/:courseId/flashcards — all flashcards (for stats)
-router.get('/courses/:courseId/flashcards', (req, res) => {
-  const cards = queryAll(`
+router.get('/courses/:courseId/flashcards', async (req, res) => {
+  const cards = await queryAll(`
     SELECT f.*, l.title AS lecture_title, l.summary_content AS lecture_summary
     FROM flashcards f
     JOIN lectures l ON f.lecture_id = l.id
@@ -71,8 +71,8 @@ router.get('/courses/:courseId/flashcards', (req, res) => {
 });
 
 // GET /api/courses/:courseId/cram — Ghost Review Engine (Hardest 50 Active Cards)
-router.get('/courses/:courseId/cram', (req, res) => {
-  const cards = queryAll(`
+router.get('/courses/:courseId/cram', async (req, res) => {
+  const cards = await queryAll(`
     SELECT f.*, l.title AS lecture_title, l.summary_content AS lecture_summary
     FROM flashcards f
     JOIN lectures l ON f.lecture_id = l.id
@@ -90,7 +90,7 @@ router.post('/courses/:courseId/cram-generate', async (req, res) => {
     const courseId = req.params.courseId;
     
     // Fetch up to 3 lecture summaries for context
-    const lectures = queryAll(`
+    const lectures = await queryAll(`
       SELECT summary_content FROM lectures
       WHERE course_id = ? AND summary_content IS NOT NULL
       ORDER BY RANDOM() LIMIT 3
@@ -126,14 +126,8 @@ Source Material:
 ${combinedSummary}
 `;
 
-    const apiKeys = [
-      'AQ.Ab8RN6JFY07YNeS8_hDWiPvr-yvtJtpMyxCxUjMceiEq8nSz-Q',
-      'AQ.Ab8RN6L2_czYom9mbd3TzQpS8BBPBQYRt87X-ZTJq9lXvm5oLg'
-    ];
-    const randomKey = apiKeys[Math.floor(Math.random() * apiKeys.length)];
-
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${randomKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         contents: [{ role: 'user', parts: [{ text: promptText }] }],
         generationConfig: {
@@ -183,13 +177,13 @@ ${combinedSummary}
   }
 });
 
-router.post('/flashcards/:id/review', (req, res) => {
+router.post('/flashcards/:id/review', async (req, res) => {
   const { quality, user_id, is_cram_mode } = req.body;
   if (quality === undefined || quality < 0 || quality > 5) {
     return res.status(400).json({ error: 'Quality score must be between 0 and 5' });
   }
 
-  const card = queryOne('SELECT * FROM flashcards WHERE id = ?', [req.params.id]);
+  const card = await queryOne('SELECT * FROM flashcards WHERE id = ?', [req.params.id]);
   if (!card) return res.status(404).json({ error: 'Flashcard not found' });
 
   /* ── SM-2 Algorithm ─────────────────────────────────── */
@@ -219,7 +213,7 @@ router.post('/flashcards/:id/review', (req, res) => {
   /* ────────────────────────────────────────────────────── */
 
   if (!is_cram_mode) {
-    execute(`
+    await execute(`
       UPDATE flashcards
       SET easiness_factor = ?, interval = ?, repetitions = ?, next_review_date = ?, learning_status = 'active'
       WHERE id = ?
@@ -235,7 +229,7 @@ router.post('/flashcards/:id/review', (req, res) => {
 
   let updatedUser = null;
   if (user_id) {
-    const user = queryOne('SELECT * FROM users WHERE id = ?', [user_id]);
+    const user = await queryOne('SELECT * FROM users WHERE id = ?', [user_id]);
     if (user) {
       const today = new Date().toISOString().split('T')[0];
       let { xp, level, current_streak, last_review_date, streak_freezes } = user;
@@ -265,17 +259,17 @@ router.post('/flashcards/:id/review', (req, res) => {
         last_review_date = today;
       }
       
-      execute(`
+      await execute(`
         UPDATE users 
         SET xp = ?, level = ?, current_streak = ?, last_review_date = ?, streak_freezes = ?
         WHERE id = ?
       `, [xp, level, current_streak, last_review_date, streak_freezes, user_id]);
       
-      updatedUser = queryOne('SELECT * FROM users WHERE id = ?', [user_id]);
+      updatedUser = await queryOne('SELECT * FROM users WHERE id = ?', [user_id]);
     }
   }
 
-  const updated = is_cram_mode ? card : queryOne('SELECT * FROM flashcards WHERE id = ?', [req.params.id]);
+  const updated = is_cram_mode ? card : await queryOne('SELECT * FROM flashcards WHERE id = ?', [req.params.id]);
   res.json({ card: updated, user: updatedUser });
 });
 

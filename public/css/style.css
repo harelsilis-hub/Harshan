@@ -64,6 +64,30 @@
   --duration: 0.3s;
 }
 
+:root.light-mode {
+  /* Surfaces */
+  --bg-base:        #f8fafc;
+  --bg-primary:     #f1f5f9;
+  --bg-secondary:   #e2e8f0;
+  --bg-card:        #ffffff;
+  --bg-card-hover:  #f8fafc;
+  --bg-input:       #ffffff;
+
+  /* Text */
+  --text-primary:   #0f172a;
+  --text-secondary: #475569;
+  --text-muted:     #64748b;
+  --text-inverse:   #f1f5f9;
+
+  /* Borders */
+  --border:         #cbd5e1;
+  --border-focus:   rgba(99, 102, 241, 0.5);
+
+  /* Glass */
+  --glass-border:   1px solid rgba(0, 0, 0, 0.05);
+  --glass-shadow:   0 8px 32px rgba(0, 0, 0, 0.05);
+}
+
 html {
   font-size: 16px;
   scroll-behavior: smooth;
@@ -119,9 +143,18 @@ h3 { font-size: 1.15rem; font-weight: 600; }
   font-size: 1.15rem;
 }
 
-.brand-icon {
-  font-size: 1.5rem;
-  animation: float 3s ease-in-out infinite;
+.brand-logo {
+  height: 42px;
+  width: auto;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.1);
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  object-fit: contain;
+  background-color: #fff;
+}
+
+.brand-logo:hover {
+  transform: scale(1.08) rotate(-3deg);
 }
 
 .nav-tagline {

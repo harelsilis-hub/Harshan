@@ -7,16 +7,7 @@ const { queryAll, queryOne, execute, runTransaction } = require('../db/schema');
 const axios = require('axios');
 
 /* ── Multer config ─────────────────────────────────────── */
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    const dir = path.join(__dirname, '..', 'uploads');
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    cb(null, dir);
-  },
-  filename: (_req, file, cb) => {
-    cb(null, `${Date.now()}-${file.originalname}`);
-  },
-});
+const storage = multer.memoryStorage();
 
 const upload = multer({
   storage,
@@ -28,8 +19,8 @@ const upload = multer({
 });
 
 /* ── GET lectures ──────────────────────────────────────── */
-router.get('/courses/:courseId/lectures', (req, res) => {
-  const lectures = queryAll(`
+router.get('/courses/:courseId/lectures', async (req, res) => {
+  const lectures = await queryAll(`
     SELECT l.*,
       (SELECT COUNT(*) FROM flashcards WHERE lecture_id = l.id) AS flashcard_count
     FROM lectures l
@@ -40,8 +31,8 @@ router.get('/courses/:courseId/lectures', (req, res) => {
 });
 
 /* ── GET latest lecture (micro-summary) ────────────────── */
-router.get('/courses/:courseId/lectures/latest', (req, res) => {
-  const lecture = queryOne(`
+router.get('/courses/:courseId/lectures/latest', async (req, res) => {
+  const lecture = await queryOne(`
     SELECT * FROM lectures
     WHERE course_id = ?
     ORDER BY created_at DESC
@@ -84,7 +75,7 @@ router.post('/courses/:courseId/lectures', upload.single('pdf'), async (req, res
 
     if (req.file) {
       const pdfParse = require('pdf-parse');
-      const buf = fs.readFileSync(req.file.path);
+      const buf = req.file.buffer;
 
       const targetPages = parsePageRange(pageRange);
       let options = {};
@@ -133,14 +124,9 @@ router.post('/courses/:courseId/lectures', upload.single('pdf'), async (req, res
     let summaryParts = [];
 
     const callGeminiWithRetry = async (chunkText, attempt = 1) => {
-      const apiKeys = [
-        'AQ.Ab8RN6JFY07YNeS8_hDWiPvr-yvtJtpMyxCxUjMceiEq8nSz-Q',
-        'AQ.Ab8RN6L2_czYom9mbd3TzQpS8BBPBQYRt87X-ZTJq9lXvm5oLg'
-      ];
-      const randomKey = apiKeys[Math.floor(Math.random() * apiKeys.length)];
       try {
         const response = await axios.post(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${randomKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${process.env.GEMINI_API_KEY}`,
           {
             systemInstruction: {
               parts: [{
@@ -267,8 +253,8 @@ Return ONLY a valid JSON object.
     let lectureId;
     let updatedUser = null;
 
-    runTransaction(() => {
-      const resLec = execute(
+    await runTransaction(async (tx) => {
+      const resLec = await tx.execute(
         'INSERT INTO lectures (course_id, title, summary_content, author_user_id, is_public) VALUES (?, ?, ?, ?, ?)',
         [courseId, title.trim(), summary, author_user_id ? parseInt(author_user_id, 10) : null, isPublicInt]
       );
@@ -278,7 +264,7 @@ Return ONLY a valid JSON object.
         const c = flashcards[i];
         const appearance_index = i + 1;
         const learning_status = 'pending';
-        const resCard = execute(
+        const resCard = await tx.execute(
           `INSERT INTO flashcards (course_id, lecture_id, appearance_index, learning_status, question_text, correct_answer, distractors, next_review_date, author_user_id, is_public)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [courseId, lectureId, appearance_index, learning_status, c.front || c.question_text || '', c.back || c.correct_answer || '', JSON.stringify(c.distractors || []), nextStr, author_user_id ? parseInt(author_user_id, 10) : null, isPublicInt]
@@ -294,18 +280,18 @@ Return ONLY a valid JSON object.
 
       if (author_user_id) {
         const uId = parseInt(author_user_id, 10);
-        const user = queryOne('SELECT * FROM users WHERE id = ?', [uId]);
+        const user = await tx.queryOne('SELECT * FROM users WHERE id = ?', [uId]);
         if (user) {
           let { xp, level } = user;
           xp += 50;
           level = Math.floor(Math.sqrt(xp / 50)) + 1;
-          execute('UPDATE users SET xp = ?, level = ? WHERE id = ?', [xp, level, uId]);
-          updatedUser = queryOne('SELECT * FROM users WHERE id = ?', [uId]);
+          await tx.execute('UPDATE users SET xp = ?, level = ? WHERE id = ?', [xp, level, uId]);
+          updatedUser = await tx.queryOne('SELECT * FROM users WHERE id = ?', [uId]);
         }
       }
     });
 
-    const lecture = queryOne('SELECT * FROM lectures WHERE id = ?', [lectureId]);
+    const lecture = await queryOne('SELECT * FROM lectures WHERE id = ?', [lectureId]);
 
     res.status(201).json({ lecture, flashcards_generated: flashcards.length, new_flashcards: flashcards, user: updatedUser });
   } catch (err) {
@@ -315,9 +301,9 @@ Return ONLY a valid JSON object.
 });
 
 /* ── DELETE lecture ──────────────────────────────────────── */
-router.delete('/lectures/:id', (req, res) => {
-  execute('DELETE FROM flashcards WHERE lecture_id = ?', [req.params.id]);
-  const { changes } = execute('DELETE FROM lectures WHERE id = ?', [req.params.id]);
+router.delete('/lectures/:id', async (req, res) => {
+  await execute('DELETE FROM flashcards WHERE lecture_id = ?', [req.params.id]);
+  const { changes } = await execute('DELETE FROM lectures WHERE id = ?', [req.params.id]);
   if (changes === 0) {
     return res.status(404).json({ error: 'Lecture not found' });
   }
@@ -325,13 +311,13 @@ router.delete('/lectures/:id', (req, res) => {
 });
 
 /* ── GET community lectures ──────────────────────────────────────── */
-router.get('/community/lectures', (req, res) => {
+router.get('/community/lectures', async (req, res) => {
   const { university, year, semester } = req.query;
   if (!university || !year || !semester) {
     return res.status(400).json({ error: 'Cohort info required' });
   }
 
-  const lectures = queryAll(`
+  const lectures = await queryAll(`
     SELECT l.*, c.name AS course_name, u.username AS author_name,
       (SELECT COUNT(*) FROM flashcards WHERE lecture_id = l.id) AS flashcard_count
     FROM lectures l
@@ -348,25 +334,25 @@ router.get('/community/lectures', (req, res) => {
 });
 
 /* ── POST share lecture ──────────────────────────────────── */
-router.post('/lectures/:id/share', (req, res) => {
+router.post('/lectures/:id/share', async (req, res) => {
   const { is_public } = req.body;
-  const { changes } = execute('UPDATE lectures SET is_public = ? WHERE id = ?', [is_public ? 1 : 0, req.params.id]);
+  const { changes } = await execute('UPDATE lectures SET is_public = ? WHERE id = ?', [is_public ? 1 : 0, req.params.id]);
   if (changes === 0) return res.status(404).json({ error: 'Lecture not found' });
 
-  execute('UPDATE flashcards SET is_public = ? WHERE lecture_id = ?', [is_public ? 1 : 0, req.params.id]);
+  await execute('UPDATE flashcards SET is_public = ? WHERE lecture_id = ?', [is_public ? 1 : 0, req.params.id]);
 
   res.json({ success: true, is_public: !!is_public });
 });
 
 /* ── POST like lecture ───────────────────────────────────── */
-router.post('/lectures/:id/like', (req, res) => {
-  const lecture = queryOne('SELECT * FROM lectures WHERE id = ?', [req.params.id]);
+router.post('/lectures/:id/like', async (req, res) => {
+  const lecture = await queryOne('SELECT * FROM lectures WHERE id = ?', [req.params.id]);
   if (!lecture) return res.status(404).json({ error: 'Lecture not found' });
 
-  execute('UPDATE lectures SET likes = likes + 1 WHERE id = ?', [req.params.id]);
+  await execute('UPDATE lectures SET likes = likes + 1 WHERE id = ?', [req.params.id]);
 
   if (lecture.author_user_id) {
-    execute('UPDATE users SET reputation = reputation + 10 WHERE id = ?', [lecture.author_user_id]);
+    await execute('UPDATE users SET reputation = reputation + 10 WHERE id = ?', [lecture.author_user_id]);
   }
 
   res.json({ success: true });

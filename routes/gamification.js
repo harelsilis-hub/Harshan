@@ -3,13 +3,13 @@ const router = express.Router();
 const { queryAll } = require('../db/schema');
 
 // GET /api/leaderboard — get top 10 users in a cohort
-router.get('/leaderboard', (req, res) => {
+router.get('/leaderboard', async (req, res) => {
   const { university, year, semester } = req.query;
   if (!university || !year || !semester) {
     return res.status(400).json({ error: 'Cohort info required' });
   }
 
-  const leaders = queryAll(`
+  const leaders = await queryAll(`
     SELECT id, username, leaderboard_name, xp, level, current_streak, reputation
     FROM users
     WHERE university = ? AND year = ? AND semester = ?
